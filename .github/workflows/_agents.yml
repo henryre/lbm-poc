@@ -40,6 +40,7 @@ jobs:
         with:
           repository: henryre/metron-poc
           path: .metron
+          token: ${{ secrets.PAT_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Parse config
@@ -227,6 +228,7 @@ jobs:
         with:
           repository: henryre/metron-poc
           path: .metron
+          token: ${{ secrets.PAT_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Parse config
