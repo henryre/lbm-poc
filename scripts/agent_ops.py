@@ -180,19 +180,19 @@ def update_status_row(body: str, agent_name: str, status: str, pr: str, preview:
 
     # Format cell values
     if status == "done" and pr:
-        status_text = "Done"
+        status_text = "✅ Done"
         pr_text = f"#{pr}"
     elif status == "failed":
-        status_text = "Failed"
+        status_text = "❌ Failed"
         pr_text = ""
     elif status == "no-changes":
-        status_text = "No changes"
+        status_text = "⚠️ No changes"
         pr_text = ""
     elif status == "preview":
         status_text = None
         pr_text = None
     else:
-        status_text = "Done"
+        status_text = "✅ Done"
         pr_text = ""
 
     if status_text is not None:
