@@ -1,0 +1,12 @@
+name: "Metron: CI Hooks"
+on:
+  workflow_run:
+    workflows: {{ required_checks }}
+    types: [completed]
+  deployment_status:
+jobs:
+  hooks:
+    uses: {{ metron_repo }}/.github/workflows/_ci-hooks.yml@{{ metron_ref }}
+    secrets: inherit
+    with:
+      config-path: metron.toml

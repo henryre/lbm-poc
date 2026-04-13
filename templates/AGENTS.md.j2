@@ -1,0 +1,53 @@
+# Agent Development Guide
+
+You are implementing features for this project. Your job is to write working code.
+
+## Scope
+
+Do NOT modify:
+- `.github/workflows/` — CI/CD infrastructure, managed separately
+- `metron.toml` — agent orchestration config
+
+{% if runtime == "node" %}
+## Build Verification
+
+Before committing, run:
+```bash
+npm run verify
+```
+
+Or individually:
+1. `npm ci` — install dependencies
+2. `npm run lint` — ESLint
+3. `npm run build` — build
+
+If `npm` is not available in your environment, skip — CI will catch errors.
+{% elif runtime == "python" %}
+## Build Verification
+
+Before committing, run:
+```bash
+pip install -e ".[dev]" && ruff check . && pytest
+```
+
+If tools are not available in your environment, skip — CI will catch errors.
+{% else %}
+## Build Verification
+
+Before committing, verify your changes pass the project's CI checks.
+{% endif %}
+
+## You MUST Commit and Push
+
+Do not declare success without running `git add`, `git commit`, and pushing
+to the remote branch.
+
+## Working on Multi-Item Issues
+
+Issues may have `[P0]`/`[P1]`/`[P2]` priority tags.
+
+1. **Plan first.** Read all items and formulate an implementation plan.
+2. **Work in priority order.** P0 first, then P1, then P2. Untagged = P1.
+3. **Commit per item.** After each item, verify build and commit separately.
+4. **Revert broken items.** If an item breaks the build, revert and move on.
+5. **Partial completion is OK.** A working PR with 6/9 items beats a broken 9/9.

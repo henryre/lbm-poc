@@ -1,0 +1,54 @@
+[metron]
+version = 1
+ready_label = "ready-for-dev"
+{% if guidance_file %}
+guidance_file = "{{ guidance_file }}"
+{% endif %}
+
+[build]
+runtime = "{{ runtime }}"
+install = "{{ install_cmd }}"
+{% if lint_cmd %}
+lint = "{{ lint_cmd }}"
+{% endif %}
+{% if typecheck_cmd %}
+typecheck = "{{ typecheck_cmd }}"
+{% endif %}
+{% if build_cmd %}
+build = "{{ build_cmd }}"
+{% endif %}
+
+[checks]
+required = ["CI"]
+repair_from = ["CI"]
+max_repair_attempts = 10
+
+[deploy]
+platform = "{{ deploy_platform }}"
+{% if deploy_platform != "none" %}
+preview_env = "Preview"
+{% endif %}
+
+{% if database_orm != "none" %}
+[database]
+orm = "{{ database_orm }}"
+{% if database_orm == "prisma" %}
+validate = "npx prisma validate"
+{% endif %}
+{% endif %}
+
+[llm]
+provider = "{{ llm_provider }}"
+summary_model = "{{ summary_model }}"
+
+{% for harness_name, harness in harnesses.items() %}
+[harnesses.{{ harness_name }}]
+mention = "{{ harness.mention }}"
+
+{% endfor %}
+{% for agent in agents %}
+[[agents]]
+harness = "{{ agent.harness }}"
+model_id = "{{ agent.model_id }}"
+model_label = "{{ agent.model_label }}"
+{% endfor %}

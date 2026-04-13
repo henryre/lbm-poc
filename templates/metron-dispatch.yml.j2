@@ -1,0 +1,10 @@
+name: "Metron: Issue Dispatch"
+on:
+  issues:
+    types: [labeled, closed]
+jobs:
+  dispatch:
+    uses: {{ metron_repo }}/.github/workflows/_dispatch.yml@{{ metron_ref }}
+    secrets: inherit
+    with:
+      config-path: metron.toml
