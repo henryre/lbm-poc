@@ -158,26 +158,75 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           ISSUE_NUM: ${{ github.event.issue.number }}
           METRON_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
+          # Read LLM config
+          LLM_CONFIG=$(python3 -c "
+          import sys, json
+          sys.path.insert(0, '.metron/scripts')
+          from config_parser import load_config
+          cfg = load_config('${{ inputs.config-path }}')
+          llm = cfg.get('llm', {})
+          print(json.dumps({'provider': llm.get('provider', 'anthropic'), 'model': llm.get('summary_model', 'claude-sonnet-4-6')}))
+          ")
+          LLM_PROVIDER=$(echo "$LLM_CONFIG" | jq -r '.provider')
+          SUMMARY_MODEL=$(echo "$LLM_CONFIG" | jq -r '.model')
 
-          # Parse agent letter and feedback with regex (no LLM needed)
+          # Parse agent letter and feedback with LLM
           PARSE_RESULT=$(python3 -c "
-          import json, os, re
+          import json, os, http.client
 
           comment = os.environ['COMMENT_BODY']
-          # Match: /feedback [agent] <letter> <feedback text>
-          m = re.match(r'/feedback\s+(?:agent\s+)?([A-Za-z])\s*(.*)', comment, re.DOTALL)
-          if m:
-              letter = m.group(1).upper()
-              feedback = m.group(2).strip()
+          provider = '$LLM_PROVIDER'
+          model = '$SUMMARY_MODEL'
+
+          prompt = f'''Parse this feedback command. Extract which agent letter and the feedback.
+          Command: {comment}
+
+          Respond in JSON only: {{\"agent\": \"A\" or \"B\" or \"C\" or \"D\", \"feedback\": \"the feedback text\"}}
+          If unclear, default agent to \"A\".'''
+
+          body = json.dumps({
+              'model': model,
+              'max_tokens': 200,
+              'messages': [{'role': 'user', 'content': prompt}],
+          })
+
+          if provider == 'portkey':
+              host = 'api.portkey.ai'
+              path = '/v1/messages'
+              api_key = os.environ.get('PORTKEY_API_KEY', '')
+              headers = {'Content-Type': 'application/json', 'x-portkey-api-key': api_key}
           else:
-              # Default: agent A, whole comment as feedback
-              letter = 'A'
-              feedback = comment.replace('/feedback', '').strip()
-          print(json.dumps({'agent': letter, 'feedback': feedback}))
+              host = 'api.anthropic.com'
+              path = '/v1/messages'
+              api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+              headers = {'Content-Type': 'application/json', 'x-api-key': api_key, 'anthropic-version': '2023-06-01'}
+
+          conn = http.client.HTTPSConnection(host, timeout=15)
+          conn.request('POST', path, body=body.encode(), headers=headers)
+          resp = conn.getresponse()
+          data = json.loads(resp.read().decode())
+
+          if resp.status == 200:
+              content = data['content'][0]['text']
+              import re
+              match = re.search(r'\{.*\}', content, re.DOTALL)
+              if match:
+                  print(match.group(0))
+              else:
+                  print(json.dumps({'agent': 'A', 'feedback': comment.replace('/feedback', '').strip()}))
+          else:
+              # Fallback to regex if LLM fails
+              m = re.match(r'/feedback\s+(?:agent\s+)?([A-Za-z])\s*(.*)', comment, re.DOTALL)
+              if m:
+                  print(json.dumps({'agent': m.group(1).upper(), 'feedback': m.group(2).strip()}))
+              else:
+                  print(json.dumps({'agent': 'A', 'feedback': comment.replace('/feedback', '').strip()}))
           ")
 
           AGENT_LETTER=$(echo "$PARSE_RESULT" | jq -r '.agent')
