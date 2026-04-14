@@ -217,11 +217,12 @@ jobs:
           fi
 
           # If there are uncommitted changes, commit them
-          if [ -n "$(git status --porcelain)" ]; then
+          # Exclude .metron/ (the metron-poc checkout) from staging
+          if [ -n "$(git status --porcelain -- ':!.metron')" ]; then
             echo "::warning::Claude left uncommitted changes -- committing them"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
+            git add -A ':!.metron'
             git commit -m "feat: implement issue (auto-committed by fallback)"
           fi
 
@@ -241,11 +242,11 @@ jobs:
           # Check if branch already exists on remote
           if gh api "repos/${{ github.repository }}/branches/$BRANCH" &>/dev/null; then
             echo "Branch $BRANCH already on remote"
-            exit 0
-          fi
+          else
 
-          echo "Pushing unpushed branch $BRANCH ($LOCAL_COMMITS commits)..."
-          git push origin "$BRANCH" || echo "::warning::Fallback push failed"
+            echo "Pushing unpushed branch $BRANCH ($LOCAL_COMMITS commits)..."
+            git push origin "$BRANCH" || echo "::warning::Fallback push failed"
+          fi
 
       - name: Create PR and post result
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
