@@ -267,13 +267,19 @@ jobs:
           # Find the latest agent branch for this issue
           # Remove trailing slash from prefix for branch search
           SEARCH_PREFIX="${BRANCH_PREFIX%/}"
-          BRANCH=$(gh api --paginate "repos/${{ github.repository }}/branches" \
-            --jq "[.[] | select(.name | startswith(\"${SEARCH_PREFIX}/issue-${ISSUE_NUM}-\") or startswith(\"${SEARCH_PREFIX}/${ISSUE_NUM}-\")) | .name] | sort | last // empty")
+          echo "Searching for branches with prefix: ${SEARCH_PREFIX}/issue-${ISSUE_NUM}- or ${SEARCH_PREFIX}/${ISSUE_NUM}-"
+          ALL_BRANCHES=$(gh api --paginate "repos/${{ github.repository }}/branches" --jq '.[].name' 2>&1)
+          echo "All branches: $ALL_BRANCHES"
+          BRANCH=$(echo "$ALL_BRANCHES" | grep -E "^${SEARCH_PREFIX}/(issue-)?${ISSUE_NUM}-" | sort | tail -1)
+          echo "Matched branch: ${BRANCH:-<none>}"
 
           if [ -z "$BRANCH" ]; then
             python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             exit 0
           fi
+
+          # Ensure agent label exists
+          gh label create "$AGENT_LABEL" --force 2>/dev/null || true
 
           # Create or find PR
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // ""')
