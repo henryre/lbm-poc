@@ -116,6 +116,8 @@ jobs:
 
           PROMPT_DELIM="PROMPT_$(uuidgen | tr -d '-')"
           echo "prompt<<${PROMPT_DELIM}" >> "$GITHUB_OUTPUT"
+          echo "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. If multiple approaches exist, pick the best one and implement it. Your job is to ship working code, not start conversations. Always commit and push your changes." >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
           echo "Implement GitHub Issue #${ISSUE_NUM}: ${TITLE}" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_OUTPUT"
           echo "## Issue Description" >> "$GITHUB_OUTPUT"

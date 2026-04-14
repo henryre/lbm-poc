@@ -355,6 +355,8 @@ jobs:
 
           PROMPT_DELIM="PROMPT_$(uuidgen | tr -d '-')"
           echo "prompt<<${PROMPT_DELIM}" >> "$GITHUB_OUTPUT"
+          echo "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. Pick the best approach and implement it. Ship working code, don't start conversations. Always commit and push." >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
           echo "$INSTRUCTION" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_OUTPUT"
           echo "## Development Guide" >> "$GITHUB_OUTPUT"
