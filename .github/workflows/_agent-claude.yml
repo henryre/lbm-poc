@@ -220,6 +220,12 @@ jobs:
             git commit -m "feat: implement issue (auto-committed by fallback)"
           fi
 
+          # Set up git auth first (claude-code-action's cleanup removes credentials)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Fetch latest main so we can compare
+          git fetch origin main --quiet 2>/dev/null || true
+
           # Check if branch has commits beyond main
           LOCAL_COMMITS=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l)
           if [ "$LOCAL_COMMITS" -eq 0 ]; then
@@ -232,9 +238,6 @@ jobs:
             echo "Branch $BRANCH already on remote"
             exit 0
           fi
-
-          # Set up git auth (claude-code-action's cleanup removes its credentials)
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           echo "Pushing unpushed branch $BRANCH ($LOCAL_COMMITS commits)..."
           git push origin "$BRANCH" || echo "::warning::Fallback push failed"
