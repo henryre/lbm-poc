@@ -75,7 +75,7 @@ jobs:
           fi
 
           # Check per-harness secrets
-          python3 -c "
+          MISSING_SECRETS=$(python3 -c "
           import sys, os
           sys.path.insert(0, '.metron/scripts')
           from config_parser import load_config, get_agents
@@ -96,9 +96,10 @@ jobs:
               elif h == 'openhands':
                   if os.environ.get('HAS_GEMINI') != 'true':
                       print('GEMINI_API_KEY (for openhands)')
-          " | while read SECRET; do
-            WARNINGS="${WARNINGS}\n- **${SECRET}** secret missing — that agent will fail"
-          done
+          ")
+          while IFS= read -r SECRET; do
+            [ -n "$SECRET" ] && WARNINGS="${WARNINGS}\n- **${SECRET}** secret missing — that agent will fail"
+          done <<< "$MISSING_SECRETS"
 
           # Check Claude Code GitHub App
           python3 -c "
