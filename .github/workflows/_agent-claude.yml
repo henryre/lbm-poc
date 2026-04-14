@@ -206,6 +206,7 @@ jobs:
           PREFIX_PATTERN="${BRANCH_PREFIX%/}"
 
           BRANCH=$(git branch --show-current)
+          echo "Branch: $BRANCH, Prefix: $BRANCH_PREFIX, Pattern: ${PREFIX_PATTERN}/*"
           if [[ "$BRANCH" != ${PREFIX_PATTERN}/* ]]; then
             echo "Not on an agent branch ($BRANCH), skipping"
             exit 0
