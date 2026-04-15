@@ -197,6 +197,7 @@ jobs:
           git push origin "$BRANCH" --force
 
           AGENT_LABEL="${{ steps.config.outputs.agent_label }}"
+          gh label create "$AGENT_LABEL" --force 2>/dev/null || true
 
           gh pr create \
             --title "$TITLE" \
@@ -304,6 +305,7 @@ jobs:
         run: python3 .metron/scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
 
       - name: Apply patch and create branch
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -392,6 +394,7 @@ jobs:
           git push origin "$BRANCH" --force
 
           AGENT_LABEL="${{ steps.config.outputs.agent_label }}"
+          gh label create "$AGENT_LABEL" --force 2>/dev/null || true
 
           # Check if PR already exists
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
