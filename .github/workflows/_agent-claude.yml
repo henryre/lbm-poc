@@ -198,7 +198,17 @@ jobs:
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
         env:
           METRON_CONFIG_PATH: ${{ inputs.config-path }}
-        run: python3 /tmp/_metron_scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE1_OUTCOME: ${{ steps.claude1_direct.outcome || steps.claude1_portkey.outcome || '' }}
+          CLAUDE2_OUTCOME: ${{ steps.claude2_direct.outcome || steps.claude2_portkey.outcome || '' }}
+        run: |
+          python3 /tmp/_metron_scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
+
+          # If both attempts failed, check if it's a Claude App installation issue
+          if [ "$CLAUDE1_OUTCOME" = "failure" ] && { [ "$CLAUDE2_OUTCOME" = "failure" ] || [ -z "$CLAUDE2_OUTCOME" ]; }; then
+            ISSUE_NUM="${{ github.event.issue.number }}"
+            gh issue comment "$ISSUE_NUM" --body "⚠️ **Claude agent failed** — both attempts errored. If the Claude Code GitHub App is not installed, install it at https://github.com/apps/claude and re-trigger." 2>/dev/null || true
+          fi
 
       - name: Commit and push if Claude didn't
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
