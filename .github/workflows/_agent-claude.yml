@@ -129,7 +129,6 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          prompt: "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. If multiple approaches exist, pick the best one and implement it. Your job is to ship working code, not start conversations. Always commit and push your changes."
           claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
 
       # Claude Code (attempt 1) — Portkey gateway
@@ -148,7 +147,6 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          prompt: "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. If multiple approaches exist, pick the best one and implement it. Your job is to ship working code, not start conversations. Always commit and push your changes."
           claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
 
       - name: Wait before retry
@@ -173,7 +171,6 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          prompt: "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. If multiple approaches exist, pick the best one and implement it. Your job is to ship working code, not start conversations. Always commit and push your changes."
           claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
 
       # Claude Code (attempt 2) — Portkey gateway
@@ -195,7 +192,6 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          prompt: "CRITICAL RULES: You are fully autonomous. NEVER ask questions, request clarification, or seek approval. If multiple approaches exist, pick the best one and implement it. Your job is to ship working code, not start conversations. Always commit and push your changes."
           claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
 
       - name: Agent diagnostics
