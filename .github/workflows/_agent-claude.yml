@@ -57,9 +57,9 @@ jobs:
               print('::error::No Claude agent found in config')
               sys.exit(1)
 
-          # Derive allowed tools
+          # Derive allowed tools (already formatted as 'Bash(cmd:*)' or bare names)
           tools = derive_allowed_tools(cfg, claude_agent)
-          tools_str = ' '.join(f\"'Bash({t}:*)'\" for t in tools)
+          tools_str = ' '.join(f\"'{t}'\" for t in tools)
 
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'runtime={build[\"runtime\"]}\n')

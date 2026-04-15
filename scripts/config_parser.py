@@ -78,6 +78,9 @@ _GIT_TOOLS = [
     "git stash",
     "git revert",
     "git checkout",
+    "git add",
+    "git commit",
+    "git rm",
 ]
 
 RUNTIME_ALLOWED_TOOLS: dict[str, list[str]] = {
@@ -101,6 +104,17 @@ RUNTIME_ALLOWED_TOOLS: dict[str, list[str]] = {
         *_GIT_TOOLS,
     ],
 }
+
+# Non-Bash tools that Claude Code needs for file operations.
+# These are passed as bare names (not wrapped in Bash(...)).
+CORE_TOOLS = [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "LS",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -194,13 +208,22 @@ def derive_allowed_tools(config: dict, agent: dict) -> list[str]:
     """Generate Claude allowed-tools list based on build.runtime.
 
     If the agent dict has an 'allowed_tools' key, use that instead.
+
+    Returns a list of tool strings ready for --allowedTools:
+      - Bash commands are wrapped as 'Bash(cmd:*)'
+      - Core tools (Read, Write, etc.) are bare names
     """
     if "allowed_tools" in agent:
         return agent["allowed_tools"]
 
     build = config.get("build", {})
     runtime = build.get("runtime", "custom")
-    return RUNTIME_ALLOWED_TOOLS.get(runtime, RUNTIME_ALLOWED_TOOLS["custom"])
+    bash_tools = RUNTIME_ALLOWED_TOOLS.get(runtime, RUNTIME_ALLOWED_TOOLS["custom"])
+
+    # Format: Bash commands as 'Bash(cmd:*)', core tools as bare names
+    formatted = [f"Bash({t}:*)" for t in bash_tools]
+    formatted.extend(CORE_TOOLS)
+    return formatted
 
 
 def derive_repair_instructions(config: dict) -> str:
