@@ -258,11 +258,18 @@ jobs:
           # Get @mention from config
           MENTION=$(python3 .metron/scripts/agent_ops.py lookup label-to-name "$AGENT_LABEL" mention 2>/dev/null || echo "")
 
+          # Build comment body with autonomous rules appended
+          RULES="IMPORTANT: You are fully autonomous. Do NOT ask questions or seek approval. Pick the best approach and implement it. Always commit and push your changes."
+          COMMENT_TEXT="${MENTION} ${FEEDBACK}
+
+          ---
+          ${RULES}"
+
           # Post feedback on the agent's PR using PAT so the event triggers other workflows
           if [ -n "$PAT_TOKEN" ]; then
-            GH_TOKEN="$PAT_TOKEN" gh pr comment "$PR_NUM" --body "${MENTION} ${FEEDBACK}"
+            GH_TOKEN="$PAT_TOKEN" gh pr comment "$PR_NUM" --body "$COMMENT_TEXT"
           else
-            gh pr comment "$PR_NUM" --body "${MENTION} ${FEEDBACK}"
+            gh pr comment "$PR_NUM" --body "$COMMENT_TEXT"
             echo "::warning::PAT_TOKEN not set -- feedback posted but agent may not pick it up automatically"
           fi
 
