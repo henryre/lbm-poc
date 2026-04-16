@@ -230,6 +230,7 @@ jobs:
       - name: Find PR and post preview + summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           METRON_CONFIG_PATH: ${{ inputs.config-path }}
         run: |

@@ -653,7 +653,34 @@ def cmd_summarize_pr(args: list[str]) -> None:
     if issue_number:
         issue_body = gh("issue", "view", issue_number, "--json", "body", "--jq", ".body", check=False)
 
-    api_key = os.environ.get("PORTKEY_API_KEY", "")
+    # Read LLM config from metron.toml
+    config_path = os.environ.get("METRON_CONFIG_PATH", "metron.toml")
+    try:
+        from config_parser import load_config
+        cfg = load_config(config_path)
+        llm = cfg.get("llm", {})
+        provider = llm.get("provider", "anthropic")
+        model = llm.get("summary_model", "claude-sonnet-4-6")
+    except Exception:
+        provider = "anthropic"
+        model = "claude-sonnet-4-6"
+
+    if provider == "portkey":
+        api_key = os.environ.get("PORTKEY_API_KEY", "")
+        host = "api.portkey.ai"
+        headers = {
+            "Content-Type": "application/json",
+            "x-portkey-api-key": api_key,
+        }
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        host = "api.anthropic.com"
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        }
+
     if not api_key:
         print("")
         return
@@ -662,7 +689,7 @@ def cmd_summarize_pr(args: list[str]) -> None:
 
     body = json.dumps(
         {
-            "model": "@bedrock/global.anthropic.claude-sonnet-4-6",
+            "model": model,
             "max_tokens": 2048,
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -671,15 +698,12 @@ def cmd_summarize_pr(args: list[str]) -> None:
     try:
         import http.client
 
-        conn = http.client.HTTPSConnection("api.portkey.ai", timeout=60)
+        conn = http.client.HTTPSConnection(host, timeout=60)
         conn.request(
             "POST",
             "/v1/messages",
             body=body.encode(),
-            headers={
-                "Content-Type": "application/json",
-                "x-portkey-api-key": api_key,
-            },
+            headers=headers,
         )
         resp = conn.getresponse()
         resp_body = resp.read().decode()
