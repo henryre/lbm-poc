@@ -340,3 +340,171 @@ class TestUpdateStatus:
             agent_ops.cmd_update_status(["42", "agent:claude", "done", "10", "", ""])
         # Should only make the one API call to find comments
         assert mock_gh.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# New helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestCountPrComments:
+    @patch("agent_ops.gh")
+    def test_counts_repair_markers(self, mock_gh):
+        mock_gh.return_value = "3"
+        result = agent_ops.count_pr_comments("10", "repair-attempt")
+        assert result == 3
+        mock_gh.assert_called_once_with(
+            "pr", "view", "10",
+            "--json", "comments",
+            "--jq", '[.comments[].body | select(contains("[repair-attempt"))] | length',
+            check=False,
+        )
+
+    @patch("agent_ops.gh")
+    def test_returns_zero_on_empty(self, mock_gh):
+        mock_gh.return_value = ""
+        result = agent_ops.count_pr_comments("10", "repair-attempt")
+        assert result == 0
+
+    @patch("agent_ops.gh")
+    def test_returns_zero_on_non_digit(self, mock_gh):
+        mock_gh.return_value = "null"
+        result = agent_ops.count_pr_comments("10", "repair-attempt")
+        assert result == 0
+
+
+class TestCountIssueComments:
+    @patch("agent_ops.gh")
+    def test_counts_ralph_markers_scoped_to_agent(self, mock_gh):
+        comments = [
+            {"body": "[ralph] Agent A did something"},
+            {"body": "[ralph] Agent B did something"},
+            {"body": "[ralph] Agent A again"},
+            {"body": "no marker"},
+        ]
+        mock_gh.return_value = json.dumps(comments)
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            result = agent_ops.count_issue_comments("42", "ralph", scope="Agent A")
+        assert result == 2
+
+    @patch("agent_ops.gh")
+    def test_counts_without_scope(self, mock_gh):
+        comments = [
+            {"body": "[ralph] Agent A did something"},
+            {"body": "[ralph] Agent B did something"},
+            {"body": "no marker"},
+        ]
+        mock_gh.return_value = json.dumps(comments)
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            result = agent_ops.count_issue_comments("42", "ralph")
+        assert result == 2
+
+    @patch("agent_ops.gh")
+    def test_returns_zero_on_empty(self, mock_gh):
+        mock_gh.return_value = ""
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            result = agent_ops.count_issue_comments("42", "ralph")
+        assert result == 0
+
+    @patch("agent_ops.gh")
+    def test_returns_zero_without_repo_env(self, mock_gh):
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
+        with patch.dict(os.environ, env, clear=True):
+            result = agent_ops.count_issue_comments("42", "ralph")
+        assert result == 0
+        mock_gh.assert_not_called()
+
+    @patch("agent_ops.gh")
+    def test_returns_zero_on_null_response(self, mock_gh):
+        mock_gh.return_value = "null"
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            result = agent_ops.count_issue_comments("42", "ralph")
+        assert result == 0
+
+
+class TestExtractIssueFromPr:
+    @patch("agent_ops.gh")
+    def test_extracts_issue_number(self, mock_gh):
+        mock_gh.return_value = "Implements #42\nSome more body text."
+        result = agent_ops.extract_issue_from_pr("10")
+        assert result == "42"
+        mock_gh.assert_called_once_with(
+            "pr", "view", "10",
+            "--json", "body",
+            "--jq", ".body",
+            check=False,
+        )
+
+    @patch("agent_ops.gh")
+    def test_returns_none_when_missing(self, mock_gh):
+        mock_gh.return_value = "This PR fixes a bug."
+        result = agent_ops.extract_issue_from_pr("10")
+        assert result is None
+
+    @patch("agent_ops.gh")
+    def test_returns_none_on_empty_body(self, mock_gh):
+        mock_gh.return_value = ""
+        result = agent_ops.extract_issue_from_pr("10")
+        assert result is None
+
+
+class TestCloseAndCleanupPr:
+    @patch("agent_ops.gh")
+    def test_closes_pr_and_deletes_branch(self, mock_gh):
+        mock_gh.side_effect = [
+            "",                 # pr close
+            "feat/my-branch",  # pr view headRefName
+            "",                # api DELETE
+        ]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            agent_ops.close_and_cleanup_pr("10", "Closing due to failure.")
+        assert mock_gh.call_count == 3
+        # Verify close call
+        close_call = mock_gh.call_args_list[0]
+        assert close_call[0][:2] == ("pr", "close")
+        assert close_call[0][2] == "10"
+        assert "Closing due to failure." in close_call[0]
+        # Verify delete branch call
+        delete_call = mock_gh.call_args_list[2]
+        assert "DELETE" in delete_call[0]
+        assert "refs/heads/feat/my-branch" in delete_call[0][-1]
+
+    @patch("agent_ops.gh")
+    def test_skips_delete_if_no_branch(self, mock_gh):
+        mock_gh.side_effect = [
+            "",   # pr close
+            "",   # pr view returns empty branch
+        ]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            agent_ops.close_and_cleanup_pr("10", "Closing.")
+        # No DELETE call made
+        assert mock_gh.call_count == 2
+        delete_calls = [c for c in mock_gh.call_args_list if "DELETE" in str(c)]
+        assert len(delete_calls) == 0
+
+    @patch("agent_ops.gh")
+    def test_skips_delete_if_no_repo_env(self, mock_gh):
+        mock_gh.side_effect = [
+            "",              # pr close
+            "some-branch",  # pr view headRefName
+        ]
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
+        with patch.dict(os.environ, env, clear=True):
+            agent_ops.close_and_cleanup_pr("10", "Closing.")
+        # No DELETE call when GITHUB_REPOSITORY is missing
+        assert mock_gh.call_count == 2
+        delete_calls = [c for c in mock_gh.call_args_list if "DELETE" in str(c)]
+        assert len(delete_calls) == 0
+
+
+class TestDispatchAgent:
+    @patch("agent_ops.gh")
+    def test_dispatches_workflow_with_correct_args(self, mock_gh):
+        mock_gh.return_value = ""
+        agent_ops.dispatch_agent("42", "claude-code")
+        mock_gh.assert_called_once_with(
+            "workflow", "run", "lbm-agents.yml",
+            "-f", "issue_number=42",
+            "-f", "agent=claude-code",
+            check=False,
+        )

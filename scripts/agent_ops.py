@@ -104,6 +104,77 @@ def name_to_agent(agents: list[AgentConfig], name: str) -> AgentConfig | None:
 
 
 # ---------------------------------------------------------------------------
+# Comment counting helpers
+# ---------------------------------------------------------------------------
+
+
+def count_pr_comments(pr_num: str, marker: str) -> int:
+    """Count comments on a PR containing a [marker] tag."""
+    result = gh(
+        "pr", "view", pr_num,
+        "--json", "comments",
+        "--jq", f'[.comments[].body | select(contains("[{marker}"))] | length',
+        check=False,
+    )
+    return int(result) if result.isdigit() else 0
+
+
+def count_issue_comments(issue_num: str, marker: str, scope: str | None = None) -> int:
+    """Count comments on an issue containing a [marker] tag, optionally scoped to a string."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        return 0
+    raw = gh("api", f"repos/{repo}/issues/{issue_num}/comments", "--jq", ".", check=False)
+    if not raw or raw == "null":
+        return 0
+    try:
+        comments = json.loads(raw)
+    except json.JSONDecodeError:
+        return 0
+    count = 0
+    for c in comments:
+        body = c.get("body", "")
+        if f"[{marker}" not in body:
+            continue
+        if scope and scope not in body:
+            continue
+        count += 1
+    return count
+
+
+# ---------------------------------------------------------------------------
+# PR lifecycle helpers
+# ---------------------------------------------------------------------------
+
+
+def extract_issue_from_pr(pr_num: str) -> str | None:
+    """Extract the linked issue number from a PR body (Implements #N)."""
+    body = gh("pr", "view", pr_num, "--json", "body", "--jq", ".body", check=False)
+    m = re.search(r"Implements #(\d+)", body)
+    return m.group(1) if m else None
+
+
+def close_and_cleanup_pr(pr_num: str, comment: str) -> None:
+    """Close a PR with a comment and delete its remote branch."""
+    gh("pr", "close", pr_num, "--comment", comment, check=False)
+    branch = gh("pr", "view", pr_num, "--json", "headRefName", "--jq", ".headRefName", check=False)
+    if branch:
+        repo = os.environ.get("GITHUB_REPOSITORY", "")
+        if repo:
+            gh("api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{branch}", check=False)
+
+
+def dispatch_agent(issue_num: str, agent_harness: str) -> None:
+    """Re-dispatch an agent workflow via gh workflow run."""
+    gh(
+        "workflow", "run", "lbm-agents.yml",
+        "-f", f"issue_number={issue_num}",
+        "-f", f"agent={agent_harness}",
+        check=False,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Status table helpers (pure functions)
 # ---------------------------------------------------------------------------
 
