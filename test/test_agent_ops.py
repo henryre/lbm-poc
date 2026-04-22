@@ -205,7 +205,15 @@ class TestPostAgentResult:
     @patch("agent_ops.load_agents")
     def test_with_pr(self, mock_agents, mock_gh, mock_status):
         mock_agents.return_value = [
-            AgentConfig(label="agent:claude", name="Agent A", branch_prefix="claude/", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")
+            AgentConfig(
+                label="agent:claude",
+                name="Agent A",
+                branch_prefix="claude/",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
         ]
         mock_gh.return_value = ""
         agent_ops.cmd_post_agent_result(["42", "agent:claude", "10", "https://example.com/run"])
@@ -223,7 +231,15 @@ class TestPostAgentResult:
     @patch("agent_ops.load_agents")
     def test_no_pr(self, mock_agents, mock_gh, mock_status):
         mock_agents.return_value = [
-            AgentConfig(label="agent:claude", name="Agent A", branch_prefix="claude/", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")
+            AgentConfig(
+                label="agent:claude",
+                name="Agent A",
+                branch_prefix="claude/",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
         ]
         agent_ops.cmd_post_agent_result(["42", "agent:claude", "", "https://example.com/run"])
         mock_status.assert_called_once()
@@ -235,7 +251,15 @@ class TestPostAgentResult:
     @patch("agent_ops.load_agents")
     def test_applies_three_labels(self, mock_agents, mock_gh, mock_status):
         mock_agents.return_value = [
-            AgentConfig(label="agent:claude", name="Agent A", branch_prefix="claude/", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")
+            AgentConfig(
+                label="agent:claude",
+                name="Agent A",
+                branch_prefix="claude/",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
         ]
         mock_gh.return_value = ""
         agent_ops.cmd_post_agent_result(["42", "agent:claude", "10", "https://example.com/run"])
@@ -253,8 +277,24 @@ class TestClosingLosingPrs:
     @patch("agent_ops.load_agents")
     def test_closes_non_winner(self, mock_agents, mock_gh):
         mock_agents.return_value = [
-            AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6"),
-            AgentConfig(label="agent:codex", branch_prefix="codex/", name="Agent B", mention="@codex", harness="codex", model_id="gpt-5", model_label="gpt-5"),
+            AgentConfig(
+                label="agent:claude",
+                branch_prefix="claude/",
+                name="Agent A",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            ),
+            AgentConfig(
+                label="agent:codex",
+                branch_prefix="codex/",
+                name="Agent B",
+                mention="@codex",
+                harness="codex",
+                model_id="gpt-5",
+                model_label="gpt-5",
+            ),
         ]
         mock_gh.side_effect = [
             "10",  # claude PR
@@ -270,7 +310,17 @@ class TestClosingLosingPrs:
     @patch("agent_ops.gh")
     @patch("agent_ops.load_agents")
     def test_empty_list(self, mock_agents, mock_gh):
-        mock_agents.return_value = [AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")]
+        mock_agents.return_value = [
+            AgentConfig(
+                label="agent:claude",
+                branch_prefix="claude/",
+                name="Agent A",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
+        ]
         mock_gh.return_value = ""
         agent_ops.cmd_close_losing_prs(["42", "10", "Agent A"])
         # Only list call, no close calls
@@ -306,15 +356,25 @@ class TestDispatchRepair:
     @patch("agent_ops.gh")
     def test_max_repairs_reached(self, mock_gh, mock_config, mock_count_pr, mock_extract):
         mock_config.return_value = LBMConfig(
-            agents=[AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")],
+            agents=[
+                AgentConfig(
+                    label="agent:claude",
+                    branch_prefix="claude/",
+                    name="Agent A",
+                    mention="@claude",
+                    harness="claude",
+                    model_id="claude-opus",
+                    model_label="opus-4-6",
+                )
+            ],
             checks=ChecksConfig(max_repair_attempts=2, max_ralph_loops=0),
             llm=LLMConfig(),
         )
         mock_gh.side_effect = [
             "claude/42-fix",  # branch
-            "",               # issue comment posted by _post_manual_intervention
+            "",  # issue comment posted by _post_manual_intervention
         ]
-        mock_count_pr.return_value = 2   # at max
+        mock_count_pr.return_value = 2  # at max
         mock_extract.return_value = "42"  # linked issue
         # max_ralph_loops=0 so goes straight to manual intervention
         agent_ops.cmd_dispatch_repair(["10", "CI failed"])
@@ -326,7 +386,17 @@ class TestDispatchRepair:
     @patch("agent_ops.gh")
     def test_not_agent_branch(self, mock_gh, mock_config, mock_count_pr, mock_extract):
         mock_config.return_value = LBMConfig(
-            agents=[AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")],
+            agents=[
+                AgentConfig(
+                    label="agent:claude",
+                    branch_prefix="claude/",
+                    name="Agent A",
+                    mention="@claude",
+                    harness="claude",
+                    model_id="claude-opus",
+                    model_label="opus-4-6",
+                )
+            ],
             checks=ChecksConfig(max_repair_attempts=2),
             llm=LLMConfig(),
         )
@@ -361,12 +431,12 @@ class TestRalphLoop:
         mock_load_config.return_value = _make_config(max_repair_attempts=3, max_ralph_loops=2)
         mock_gh.side_effect = [
             "codex/42-fix",  # branch lookup
-            "",              # gh pr diff (inside _summarize_failed_attempt)
-            "",              # issue comment for ralph-restart
+            "",  # gh pr diff (inside _summarize_failed_attempt)
+            "",  # issue comment for ralph-restart
         ]
         mock_extract_issue.return_value = "42"
-        mock_count_pr.return_value = 3          # at max repairs
-        mock_count_issue.return_value = 0       # no ralph restarts yet
+        mock_count_pr.return_value = 3  # at max repairs
+        mock_count_issue.return_value = 0  # no ralph restarts yet
         mock_call_llm.return_value = "Added a Footer component but tests kept failing."
 
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
@@ -382,12 +452,9 @@ class TestRalphLoop:
 
         # Issue comment should mention [ralph-restart 1]
         issue_comment_calls = [
-            c for c in mock_gh.call_args_list
-            if len(c[0]) >= 3 and c[0][0] == "issue" and c[0][1] == "comment"
+            c for c in mock_gh.call_args_list if len(c[0]) >= 3 and c[0][0] == "issue" and c[0][1] == "comment"
         ]
         assert len(issue_comment_calls) == 1
-        comment_body = issue_comment_calls[0][1]["body"] if issue_comment_calls[0][1] else issue_comment_calls[0][0][-1]
-        # body is passed as keyword arg to gh()
         all_args_str = str(mock_gh.call_args_list)
         assert "[ralph-restart 1]" in all_args_str
 
@@ -415,10 +482,10 @@ class TestRalphLoop:
         # gh is called for: branch lookup, issue comment
         mock_gh.side_effect = [
             "codex/42-fix",  # branch lookup
-            "",              # issue comment for manual intervention
+            "",  # issue comment for manual intervention
         ]
         mock_extract_issue.return_value = "42"
-        mock_count_pr.return_value = 3    # at max repairs
+        mock_count_pr.return_value = 3  # at max repairs
         mock_count_issue.return_value = 2  # at max ralph loops
 
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
@@ -429,8 +496,7 @@ class TestRalphLoop:
 
         # The issue comment call should contain "manual intervention"
         issue_comment_calls = [
-            c for c in mock_gh.call_args_list
-            if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
+            c for c in mock_gh.call_args_list if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
         ]
         assert len(issue_comment_calls) == 1
         comment_body = issue_comment_calls[0][0][-1]
@@ -458,7 +524,7 @@ class TestRalphLoop:
         # gh is called for: branch lookup, issue comment
         mock_gh.side_effect = [
             "codex/42-fix",  # branch lookup
-            "",              # issue comment
+            "",  # issue comment
         ]
         mock_extract_issue.return_value = "42"
         mock_count_pr.return_value = 3  # at max repairs
@@ -471,8 +537,7 @@ class TestRalphLoop:
 
         # The issue comment call should contain "manual intervention"
         issue_comment_calls = [
-            c for c in mock_gh.call_args_list
-            if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
+            c for c in mock_gh.call_args_list if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
         ]
         assert len(issue_comment_calls) == 1
         comment_body = issue_comment_calls[0][0][-1]
@@ -525,7 +590,17 @@ class TestUpdateStatus:
     @patch("agent_ops.gh")
     @patch("agent_ops.load_agents")
     def test_updates_row(self, mock_agents, mock_gh):
-        mock_agents.return_value = [AgentConfig(label="agent:claude", name="Agent A", branch_prefix="claude/", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")]
+        mock_agents.return_value = [
+            AgentConfig(
+                label="agent:claude",
+                name="Agent A",
+                branch_prefix="claude/",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
+        ]
         table_body = (
             "## Agent Implementations\n\n"
             "| Agent | Status | PR | Preview | Run |\n"
@@ -546,7 +621,17 @@ class TestUpdateStatus:
     @patch("agent_ops.gh")
     @patch("agent_ops.load_agents")
     def test_no_status_comment(self, mock_agents, mock_gh):
-        mock_agents.return_value = [AgentConfig(label="agent:claude", name="Agent A", branch_prefix="claude/", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")]
+        mock_agents.return_value = [
+            AgentConfig(
+                label="agent:claude",
+                name="Agent A",
+                branch_prefix="claude/",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
+        ]
         mock_gh.return_value = ""
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
             agent_ops.cmd_update_status(["42", "agent:claude", "done", "10", "", ""])
@@ -566,9 +651,13 @@ class TestCountPrComments:
         result = agent_ops.count_pr_comments("10", "repair-attempt")
         assert result == 3
         mock_gh.assert_called_once_with(
-            "pr", "view", "10",
-            "--json", "comments",
-            "--jq", '[.comments[].body | select(contains("[repair-attempt"))] | length',
+            "pr",
+            "view",
+            "10",
+            "--json",
+            "comments",
+            "--jq",
+            '[.comments[].body | select(contains("[repair-attempt"))] | length',
             check=False,
         )
 
@@ -641,9 +730,13 @@ class TestExtractIssueFromPr:
         result = agent_ops.extract_issue_from_pr("10")
         assert result == "42"
         mock_gh.assert_called_once_with(
-            "pr", "view", "10",
-            "--json", "body",
-            "--jq", ".body",
+            "pr",
+            "view",
+            "10",
+            "--json",
+            "body",
+            "--jq",
+            ".body",
             check=False,
         )
 
@@ -664,9 +757,9 @@ class TestCloseAndCleanupPr:
     @patch("agent_ops.gh")
     def test_closes_pr_and_deletes_branch(self, mock_gh):
         mock_gh.side_effect = [
-            "",                 # pr close
+            "",  # pr close
             "feat/my-branch",  # pr view headRefName
-            "",                # api DELETE
+            "",  # api DELETE
         ]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
             agent_ops.close_and_cleanup_pr("10", "Closing due to failure.")
@@ -684,8 +777,8 @@ class TestCloseAndCleanupPr:
     @patch("agent_ops.gh")
     def test_skips_delete_if_no_branch(self, mock_gh):
         mock_gh.side_effect = [
-            "",   # pr close
-            "",   # pr view returns empty branch
+            "",  # pr close
+            "",  # pr view returns empty branch
         ]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
             agent_ops.close_and_cleanup_pr("10", "Closing.")
@@ -697,7 +790,7 @@ class TestCloseAndCleanupPr:
     @patch("agent_ops.gh")
     def test_skips_delete_if_no_repo_env(self, mock_gh):
         mock_gh.side_effect = [
-            "",              # pr close
+            "",  # pr close
             "some-branch",  # pr view headRefName
         ]
         env = {k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}
@@ -715,9 +808,13 @@ class TestDispatchAgent:
         mock_gh.return_value = ""
         agent_ops.dispatch_agent("42", "claude-code")
         mock_gh.assert_called_once_with(
-            "workflow", "run", "lbm-agents.yml",
-            "-f", "issue_number=42",
-            "-f", "agent=claude-code",
+            "workflow",
+            "run",
+            "lbm-agents.yml",
+            "-f",
+            "issue_number=42",
+            "-f",
+            "agent=claude-code",
             check=False,
         )
 
@@ -730,6 +827,7 @@ class TestDispatchAgent:
 class TestCallLLM:
     def test_returns_none_without_api_key(self):
         from models import LLMConfig
+
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
             result = agent_ops.call_llm("Hello", LLMConfig())
         assert result is None
@@ -737,11 +835,10 @@ class TestCallLLM:
     @patch("http.client.HTTPSConnection")
     def test_returns_text_on_success(self, mock_conn_cls):
         from models import LLMConfig
+
         mock_resp = mock_conn_cls.return_value.getresponse.return_value
         mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps(
-            {"content": [{"text": "Summary here"}]}
-        ).encode()
+        mock_resp.read.return_value = json.dumps({"content": [{"text": "Summary here"}]}).encode()
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}, clear=False):
             result = agent_ops.call_llm("Summarize this", LLMConfig())
         assert result == "Summary here"
@@ -749,6 +846,7 @@ class TestCallLLM:
     @patch("http.client.HTTPSConnection")
     def test_returns_none_on_http_error(self, mock_conn_cls):
         from models import LLMConfig
+
         mock_resp = mock_conn_cls.return_value.getresponse.return_value
         mock_resp.status = 401
         mock_resp.read.return_value = b'{"error": "unauthorized"}'

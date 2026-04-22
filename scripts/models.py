@@ -91,10 +91,7 @@ class LBMConfig:
             model_label = entry["model_label"]
 
             if harness not in harnesses:
-                raise ValueError(
-                    f"Harness '{harness}' not defined in [harnesses]. "
-                    f"Available: {list(harnesses.keys())}"
-                )
+                raise ValueError(f"Harness '{harness}' not defined in [harnesses]. Available: {list(harnesses.keys())}")
 
             default_label = f"agent:{harness}-{model_label}"
             default_prefix = f"{harness}-{model_label}/"
@@ -104,8 +101,7 @@ class LBMConfig:
 
             if branch_prefix in seen_prefixes:
                 raise ValueError(
-                    f"Duplicate branch_prefix '{branch_prefix}' -- "
-                    "each agent entry must have a unique prefix"
+                    f"Duplicate branch_prefix '{branch_prefix}' -- each agent entry must have a unique prefix"
                 )
             seen_prefixes.add(branch_prefix)
 

@@ -53,6 +53,7 @@ def gh(*args: str, check: bool = True) -> str:
 # Config helpers
 # ---------------------------------------------------------------------------
 
+
 def load_lbm_config(path: str | None = None) -> LBMConfig:
     """Read lbm.toml and return a typed LBMConfig."""
     config_path = path or CONFIG_PATH
@@ -111,9 +112,13 @@ def name_to_agent(agents: list[AgentConfig], name: str) -> AgentConfig | None:
 def count_pr_comments(pr_num: str, marker: str) -> int:
     """Count comments on a PR containing a [marker] tag."""
     result = gh(
-        "pr", "view", pr_num,
-        "--json", "comments",
-        "--jq", f'[.comments[].body | select(contains("[{marker}"))] | length',
+        "pr",
+        "view",
+        pr_num,
+        "--json",
+        "comments",
+        "--jq",
+        f'[.comments[].body | select(contains("[{marker}"))] | length',
         check=False,
     )
     return int(result) if result.isdigit() else 0
@@ -167,9 +172,13 @@ def close_and_cleanup_pr(pr_num: str, comment: str) -> None:
 def dispatch_agent(issue_num: str, agent_harness: str) -> None:
     """Re-dispatch an agent workflow via gh workflow run."""
     gh(
-        "workflow", "run", "lbm-agents.yml",
-        "-f", f"issue_number={issue_num}",
-        "-f", f"agent={agent_harness}",
+        "workflow",
+        "run",
+        "lbm-agents.yml",
+        "-f",
+        f"issue_number={issue_num}",
+        "-f",
+        f"agent={agent_harness}",
         check=False,
     )
 
@@ -345,11 +354,13 @@ def call_llm(prompt: str, llm_config: LLMConfig) -> str | None:
     if not api_key:
         return None
 
-    body = json.dumps({
-        "model": llm_config.summary_model,
-        "max_tokens": 2048,
-        "messages": [{"role": "user", "content": prompt}],
-    })
+    body = json.dumps(
+        {
+            "model": llm_config.summary_model,
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+    )
 
     try:
         conn = http.client.HTTPSConnection(host, timeout=60)
@@ -396,6 +407,7 @@ def cmd_lookup(args: list[str]) -> None:
             print(getattr(agent, field, ""))
         else:
             from dataclasses import fields as dc_fields
+
             for f in dc_fields(agent):
                 print(f"{f.name}={getattr(agent, f.name)}")
     else:
