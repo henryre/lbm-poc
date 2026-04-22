@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import config_parser
 
 SAMPLE_TOML = """
-[metron]
+[lbm]
 version = 1
 ready_label = "ready-for-dev"
 guidance_file = "AGENTS.md"

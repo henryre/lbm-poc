@@ -1,4 +1,4 @@
-name: "Metron: CI Hooks (Self-Heal + Preview + Deploy)"
+name: "LBM: CI Hooks (Self-Heal + Preview + Deploy)"
 
 # Reusable workflow — called by target repos on workflow_run + deployment_status.
 # Handles CI failure repair, auto-merge, deploy failure repair, and preview link posting.
@@ -7,10 +7,10 @@ on:
   workflow_call:
     inputs:
       config-path:
-        description: "Path to metron.toml in the calling repo"
+        description: "Path to lbm.toml in the calling repo"
         required: false
         type: string
-        default: "metron.toml"
+        default: "lbm.toml"
 
 
 jobs:
@@ -29,8 +29,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Dispatch repair for CI failure
@@ -38,7 +38,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           BRANCH="${{ github.event.workflow_run.head_branch }}"
           RUN_ID="${{ github.event.workflow_run.id }}"
@@ -55,7 +55,7 @@ jobs:
           # Also note which steps passed/failed
           STEP_SUMMARY=$(gh run view "$RUN_ID" --json jobs --jq '.jobs[].steps[] | select(.conclusion != "skipped") | "\(.name): \(.conclusion)"' 2>/dev/null || echo "")
 
-          python3 .metron/scripts/agent_ops.py dispatch-repair "$PR_NUM" "CI failed. Fix ALL errors before pushing -- CI has multiple steps (lint, typecheck, build) and all must pass.
+          python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "CI failed. Fix ALL errors before pushing -- CI has multiple steps (lint, typecheck, build) and all must pass.
 
           Step results:
           \`\`\`
@@ -82,14 +82,14 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Merge pending PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           BRANCH="${{ github.event.workflow_run.head_branch }}"
 
@@ -105,7 +105,7 @@ jobs:
 
           PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null || echo "")
           ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' || echo "")
-          AGENT_NAME=$(python3 .metron/scripts/agent_ops.py lookup branch-to-name "$BRANCH" name 2>/dev/null || echo "Agent")
+          AGENT_NAME=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" name 2>/dev/null || echo "Agent")
 
           gh pr edit "$PR_NUM" --remove-label "merge-pending" || true
           gh pr ready "$PR_NUM" || true
@@ -113,7 +113,7 @@ jobs:
 
           if gh pr merge "$PR_NUM" --squash --delete-branch; then
             if [ -n "$ISSUE_NUM" ]; then
-              python3 .metron/scripts/agent_ops.py close-losing-prs "$ISSUE_NUM" "$PR_NUM" "$AGENT_NAME"
+              python3 .lbm/scripts/agent_ops.py close-losing-prs "$ISSUE_NUM" "$PR_NUM" "$AGENT_NAME"
               gh issue close "$ISSUE_NUM" --comment "Merged ${AGENT_NAME} implementation (PR #${PR_NUM})."
             fi
           else
@@ -136,8 +136,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Dispatch repair for deploy failure
@@ -146,7 +146,7 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           DEPLOY_SHA="${{ github.event.deployment.sha }}"
 
@@ -162,7 +162,7 @@ jobs:
           BRANCH=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || echo "")
 
           # Check if this is an agent branch
-          AGENT_INFO=$(python3 .metron/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
           if [ -z "$AGENT_INFO" ]; then
             echo "Not an agent branch: $BRANCH"
             exit 0
@@ -171,7 +171,7 @@ jobs:
           # Read deploy platform from config
           DEPLOY_PLATFORM=$(python3 -c "
           import sys
-          sys.path.insert(0, '.metron/scripts')
+          sys.path.insert(0, '.lbm/scripts')
           from config_parser import load_config, get_deploy_platform
           cfg = load_config('${{ inputs.config-path }}')
           print(get_deploy_platform(cfg))
@@ -200,7 +200,7 @@ jobs:
             DEPLOY_LOGS="Deployment failed. Logs: ${LOG_URL:-$TARGET_URL}"
           fi
 
-          python3 .metron/scripts/agent_ops.py dispatch-repair "$PR_NUM" "Deployment failed (CI passed but deploy did not). This is often caused by missing environment variables, client generation issues, or runtime errors during prerendering.
+          python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "Deployment failed (CI passed but deploy did not). This is often caused by missing environment variables, client generation issues, or runtime errors during prerendering.
 
           Deploy build logs:
           \`\`\`
@@ -223,8 +223,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Find PR and post preview + summary
@@ -232,7 +232,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           PREVIEW_URL="${{ github.event.deployment_status.environment_url }}"
           DEPLOY_SHA="${{ github.event.deployment.sha }}"
@@ -251,7 +251,7 @@ jobs:
           BRANCH=$(echo "$PR_DATA" | jq -r '.head.ref')
 
           # Look up agent from branch prefix
-          AGENT_INFO=$(python3 .metron/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
           if [ -z "$AGENT_INFO" ]; then
             echo "Not an agent branch: $BRANCH"
             exit 0
@@ -269,7 +269,7 @@ jobs:
 
           # Generate summary
           echo "Generating summary for PR #$PR_NUM..."
-          SUMMARY=$(python3 .metron/scripts/agent_ops.py summarize-pr "$PR_NUM" "$ISSUE_NUM" 2>&1) || true
+          SUMMARY=$(python3 .lbm/scripts/agent_ops.py summarize-pr "$PR_NUM" "$ISSUE_NUM" 2>&1) || true
           if [ -n "$SUMMARY" ]; then
             echo "Summary generated (${#SUMMARY} chars)"
           else
@@ -305,4 +305,4 @@ jobs:
 
           # Also update the status table with the preview link
           AGENT_LABEL=$(echo "$AGENT_INFO" | grep "^label=" | cut -d= -f2)
-          python3 .metron/scripts/agent_ops.py update-status "$ISSUE_NUM" "$AGENT_LABEL" "preview" "$PR_NUM" "$PREVIEW_URL" || true
+          python3 .lbm/scripts/agent_ops.py update-status "$ISSUE_NUM" "$AGENT_LABEL" "preview" "$PR_NUM" "$PREVIEW_URL" || true

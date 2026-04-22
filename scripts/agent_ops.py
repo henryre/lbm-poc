@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consolidated dev-infra operations for the Metron agent orchestration.
+"""Consolidated dev-infra operations for the LBM agent orchestration.
 
 Replaces: close-previous-prs.sh, post-agent-result.sh, close-losing-prs.sh,
 dispatch-repair.sh, agent-lookup.py, update-status.py, summarize-pr.py.
@@ -31,8 +31,8 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 CONFIG_PATH = os.environ.get(
-    "METRON_CONFIG_PATH",
-    os.path.join(os.getcwd(), "metron.toml"),
+    "LBM_CONFIG_PATH",
+    os.path.join(os.getcwd(), "lbm.toml"),
 )
 
 
@@ -54,8 +54,8 @@ def gh(*args: str, check: bool = True) -> str:
 AGENT_NAME_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
-def load_metron_config(path: str | None = None) -> dict:
-    """Read metron.toml and extract the agents section in the flat format.
+def load_lbm_config(path: str | None = None) -> dict:
+    """Read lbm.toml and extract the agents section in the flat format.
 
     Returns a dict with 'agents' and 'max_repair_attempts' keys,
     matching the format the existing functions expect.
@@ -113,7 +113,7 @@ def load_metron_config(path: str | None = None) -> dict:
 
 def load_config(path: str | None = None) -> dict:
     """Load the config in the flat format the existing functions expect."""
-    return load_metron_config(path)
+    return load_lbm_config(path)
 
 
 def load_agents(path: str | None = None) -> list[dict]:
@@ -653,8 +653,8 @@ def cmd_summarize_pr(args: list[str]) -> None:
     if issue_number:
         issue_body = gh("issue", "view", issue_number, "--json", "body", "--jq", ".body", check=False)
 
-    # Read LLM config from metron.toml
-    config_path = os.environ.get("METRON_CONFIG_PATH", "metron.toml")
+    # Read LLM config from lbm.toml
+    config_path = os.environ.get("LBM_CONFIG_PATH", "lbm.toml")
     try:
         from config_parser import load_config
         cfg = load_config(config_path)
@@ -775,11 +775,11 @@ def cmd_diagnostics(args: list[str]) -> None:
 
 
 def cmd_generate_config(args: list[str]) -> None:
-    """Generate flat config output from metron.toml (for debugging/validation)."""
+    """Generate flat config output from lbm.toml (for debugging/validation)."""
     check_only = "--check" in args
     config_path = args[0] if args and not args[0].startswith("--") else CONFIG_PATH
 
-    config = load_metron_config(config_path)
+    config = load_lbm_config(config_path)
     generated_json = json.dumps(config, indent=2) + "\n"
 
     if check_only:

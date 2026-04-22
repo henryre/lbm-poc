@@ -1,4 +1,4 @@
-name: "Metron: Agent Runners (Codex + OpenHands)"
+name: "LBM: Agent Runners (Codex + OpenHands)"
 
 # Reusable workflow — called by target repos via workflow_dispatch.
 # Receives issue_number and agent harness, runs the appropriate agent.
@@ -7,10 +7,10 @@ on:
   workflow_call:
     inputs:
       config-path:
-        description: "Path to metron.toml in the calling repo"
+        description: "Path to lbm.toml in the calling repo"
         required: false
         type: string
-        default: "metron.toml"
+        default: "lbm.toml"
       issue_number:
         description: "Issue number to implement"
         required: true
@@ -38,18 +38,18 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Parse config
         id: config
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           python3 -c "
           import sys
-          sys.path.insert(0, '.metron/scripts')
+          sys.path.insert(0, '.lbm/scripts')
           from config_parser import load_config, get_agents, get_build_commands
 
           cfg = load_config('${{ inputs.config-path }}')
@@ -67,7 +67,7 @@ jobs:
               print('::error::No Codex agent found in config')
               import sys; sys.exit(1)
 
-          guidance = cfg.get('metron', {}).get('guidance_file', 'AGENTS.md')
+          guidance = cfg.get('lbm', {}).get('guidance_file', 'AGENTS.md')
 
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'runtime={build[\"runtime\"]}\n')
@@ -96,9 +96,9 @@ jobs:
       - name: Close previous PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          python3 .metron/scripts/agent_ops.py close-previous-prs \
+          python3 .lbm/scripts/agent_ops.py close-previous-prs \
             "$ISSUE_NUM" \
             "${{ steps.config.outputs.branch_prefix }}" \
             "${{ steps.config.outputs.agent_label }}"
@@ -151,24 +151,24 @@ jobs:
       - name: Agent diagnostics
         if: always()
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
-        run: python3 .metron/scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: python3 .lbm/scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
 
       - name: Create branch, PR, and post result
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          # Preserve metron scripts outside the working tree so they survive git ops
-          cp -r .metron/scripts /tmp/_metron_scripts
+          # Preserve lbm scripts outside the working tree so they survive git ops
+          cp -r .lbm/scripts /tmp/_lbm_scripts
 
-          # Remove .metron from working tree before checking porcelain
-          rm -rf .metron
+          # Remove .lbm from working tree before checking porcelain
+          rm -rf .lbm
 
           if [ -z "$(git status --porcelain)" ]; then
-            python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
+            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
             exit 0
           fi
 
@@ -210,7 +210,7 @@ jobs:
 
           PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null || echo "")
 
-          python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
+          python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
 
   # -----------------------------------------------------------------------
   # OpenHands agent
@@ -228,18 +228,18 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Parse config
         id: config
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           python3 -c "
           import sys
-          sys.path.insert(0, '.metron/scripts')
+          sys.path.insert(0, '.lbm/scripts')
           from config_parser import load_config, get_agents, get_patch_filters
           import json
 
@@ -269,9 +269,9 @@ jobs:
       - name: Close previous PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          python3 .metron/scripts/agent_ops.py close-previous-prs \
+          python3 .lbm/scripts/agent_ops.py close-previous-prs \
             "$ISSUE_NUM" \
             "${{ steps.config.outputs.branch_prefix }}" \
             "${{ steps.config.outputs.agent_label }}"
@@ -305,8 +305,8 @@ jobs:
       - name: Agent diagnostics
         if: always()
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
-        run: python3 .metron/scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: python3 .lbm/scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
 
       - name: Apply patch and create branch
         if: always()
@@ -314,11 +314,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           PATCH_FILTERS: ${{ steps.config.outputs.patch_filters }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           if [ ! -f /tmp/oh-output/output.jsonl ]; then
             echo "No resolver output found"
-            python3 .metron/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            python3 .lbm/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             exit 0
           fi
 
@@ -344,7 +344,7 @@ jobs:
 
           if [ -z "$PATCH" ]; then
             echo "No patch in resolver output"
-            python3 .metron/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            python3 .lbm/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             exit 0
           fi
 
@@ -370,18 +370,18 @@ jobs:
             echo "::warning::Patch applied via patch command (lenient mode)"
           else
             echo "::error::All patch methods failed"
-            python3 .metron/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            python3 .lbm/scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             exit 0
           fi
 
-          # Preserve metron scripts outside the working tree
-          cp -r .metron/scripts /tmp/_metron_scripts
+          # Preserve lbm scripts outside the working tree
+          cp -r .lbm/scripts /tmp/_lbm_scripts
 
-          # Remove .metron checkout before checking for changes
-          rm -rf .metron
+          # Remove .lbm checkout before checking for changes
+          rm -rf .lbm
 
           if [ -z "$(git status --porcelain)" ]; then
-            python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
+            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "${{ steps.config.outputs.agent_label }}" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
             exit 0
           fi
 
@@ -429,5 +429,5 @@ jobs:
 
             PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null || echo "")
 
-            python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
+            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>/dev/null || true
           fi

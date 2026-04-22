@@ -1,4 +1,4 @@
-name: "Metron: Agent Dispatch"
+name: "LBM: Agent Dispatch"
 on:
   workflow_dispatch:
     inputs:
@@ -15,9 +15,9 @@ permissions:
   id-token: write
 jobs:
   run:
-    uses: {{ metron_repo }}/.github/workflows/_agents.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_agents.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml
       issue_number: ${{ '{{' }} inputs.issue_number {{ '}}' }}
       agent: ${{ '{{' }} inputs.agent {{ '}}' }}

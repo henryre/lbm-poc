@@ -1,4 +1,4 @@
-name: "Metron: Comment Commands"
+name: "LBM: Comment Commands"
 on:
   issue_comment:
     types: [created]
@@ -11,17 +11,17 @@ permissions:
   id-token: write
 jobs:
   handle:
-    uses: {{ metron_repo }}/.github/workflows/_comments.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_comments.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml
 {% if 'claude' in harnesses %}
   claude:
     if: >-
       github.event_name == 'issue_comment' &&
       contains(github.event.comment.body, '@claude')
-    uses: {{ metron_repo }}/.github/workflows/_agent-claude.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_agent-claude.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml
 {% endif %}

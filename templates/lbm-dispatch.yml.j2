@@ -1,4 +1,4 @@
-name: "Metron: Issue Dispatch"
+name: "LBM: Issue Dispatch"
 on:
   issues:
     types: [labeled, closed]
@@ -10,15 +10,15 @@ permissions:
   id-token: write
 jobs:
   dispatch:
-    uses: {{ metron_repo }}/.github/workflows/_dispatch.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_dispatch.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml
 {% if 'claude' in harnesses %}
   claude:
     if: github.event.action == 'labeled'
-    uses: {{ metron_repo }}/.github/workflows/_agent-claude.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_agent-claude.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml
 {% endif %}

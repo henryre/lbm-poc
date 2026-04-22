@@ -1,5 +1,5 @@
 [project]
-name = "metron-dev"
+name = "lbm-dev"
 version = "0.1.0"
 description = "Multi-agent dev infra for competing AI implementations on GitHub Issues"
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ dev = [
 ]
 
 [project.scripts]
-metron-dev = "cli.main:cli"
+lbm-dev = "cli.main:cli"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,4 +1,4 @@
-name: "Metron: CI Hooks"
+name: "LBM: CI Hooks"
 on:
   workflow_run:
     workflows: {{ required_checks }}
@@ -11,7 +11,7 @@ permissions:
   actions: read
 jobs:
   hooks:
-    uses: {{ metron_repo }}/.github/workflows/_ci-hooks.yml@{{ metron_ref }}
+    uses: {{ lbm_repo }}/.github/workflows/_ci-hooks.yml@{{ lbm_ref }}
     secrets: inherit
     with:
-      config-path: metron.toml
+      config-path: lbm.toml

@@ -1,4 +1,4 @@
-name: "Metron: Claude Code Agent"
+name: "LBM: Claude Code Agent"
 
 # Reusable workflow — called by target repos on issues.labeled + issue_comment.
 # Runs claude-code-action with config-driven setup, retry, fallback commit, and PR creation.
@@ -7,10 +7,10 @@ on:
   workflow_call:
     inputs:
       config-path:
-        description: "Path to metron.toml in the calling repo"
+        description: "Path to lbm.toml in the calling repo"
         required: false
         type: string
-        default: "metron.toml"
+        default: "lbm.toml"
 
 
 jobs:
@@ -27,24 +27,24 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: henryre/metron-poc
-          path: .metron
+          repository: henryre/lbm-poc
+          path: .lbm
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Parse config
         id: config
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           python3 -c "
           import sys, json
-          sys.path.insert(0, '.metron/scripts')
+          sys.path.insert(0, '.lbm/scripts')
           from config_parser import load_config, get_agents, get_build_commands, derive_allowed_tools
 
           cfg = load_config('${{ inputs.config-path }}')
           build = get_build_commands(cfg)
           agents = get_agents(cfg)
-          ready_label = cfg.get('metron', {}).get('ready_label', 'ready-for-dev')
+          ready_label = cfg.get('lbm', {}).get('ready_label', 'ready-for-dev')
 
           # Find the first claude agent
           claude_agent = None
@@ -73,9 +73,9 @@ jobs:
               f.write(f'llm_provider={llm_provider}\n')
           " || { echo "::error::Config parse failed"; exit 1; }
 
-      # Copy metron scripts to /tmp so they survive if the working tree changes
-      - name: Preserve metron scripts
-        run: cp -r .metron/scripts /tmp/_metron_scripts 2>/dev/null || true
+      # Copy lbm scripts to /tmp so they survive if the working tree changes
+      - name: Preserve lbm scripts
+        run: cp -r .lbm/scripts /tmp/_lbm_scripts 2>/dev/null || true
 
       # Check if we should proceed (label matches ready_label for issues events)
       - name: Check trigger
@@ -109,9 +109,9 @@ jobs:
         if: steps.trigger.outputs.skip == 'false' && github.event_name == 'issues'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
-          python3 /tmp/_metron_scripts/agent_ops.py close-previous-prs \
+          python3 /tmp/_lbm_scripts/agent_ops.py close-previous-prs \
             "${{ github.event.issue.number }}" \
             "${{ steps.config.outputs.branch_prefix }}" \
             "${{ steps.config.outputs.agent_label }}"
@@ -197,12 +197,12 @@ jobs:
       - name: Agent diagnostics
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
         env:
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLAUDE1_OUTCOME: ${{ steps.claude1_direct.outcome || steps.claude1_portkey.outcome || '' }}
           CLAUDE2_OUTCOME: ${{ steps.claude2_direct.outcome || steps.claude2_portkey.outcome || '' }}
         run: |
-          python3 /tmp/_metron_scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
+          python3 /tmp/_lbm_scripts/agent_ops.py diagnostics "${{ steps.config.outputs.agent_label }}"
 
           # If both attempts failed, check if it's a Claude App installation issue
           if [ "$CLAUDE1_OUTCOME" = "failure" ] && { [ "$CLAUDE2_OUTCOME" = "failure" ] || [ -z "$CLAUDE2_OUTCOME" ]; }; then
@@ -227,12 +227,12 @@ jobs:
           fi
 
           # If there are uncommitted changes, commit them
-          # Exclude .metron/ (the metron-poc checkout) from staging
-          if [ -n "$(git status --porcelain -- ':!.metron')" ]; then
+          # Exclude .lbm/ (the lbm-poc checkout) from staging
+          if [ -n "$(git status --porcelain -- ':!.lbm')" ]; then
             echo "::warning::Claude left uncommitted changes -- committing them"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A ':!.metron'
+            git add -A ':!.lbm'
             git commit -m "feat: implement issue (auto-committed by fallback)"
           fi
 
@@ -262,7 +262,7 @@ jobs:
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          METRON_CONFIG_PATH: ${{ inputs.config-path }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
           BRANCH_PREFIX="${{ steps.config.outputs.branch_prefix }}"
@@ -284,7 +284,7 @@ jobs:
           echo "Matched branch: ${BRANCH:-<none>}"
 
           if [ -z "$BRANCH" ]; then
-            python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             exit 0
           fi
 
@@ -308,4 +308,4 @@ jobs:
             PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null || echo "")
           fi
 
-          python3 /tmp/_metron_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

@@ -1,6 +1,6 @@
-"""Parse metron.toml configuration files.
+"""Parse lbm.toml configuration files.
 
-The metron.toml format:
+The lbm.toml format:
     [build]
     runtime = "node"          # node | python | custom
     install = "npm ci"
@@ -153,7 +153,7 @@ RUNTIME_PATCH_FILTERS: dict[str, list[str]] = {
 
 
 def load_config(path: str) -> dict:
-    """Read and parse a metron.toml file, returning the raw dict."""
+    """Read and parse a lbm.toml file, returning the raw dict."""
     with open(path, "rb") as f:
         return tomllib.load(f)
 

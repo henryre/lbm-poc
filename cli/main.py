@@ -1,4 +1,4 @@
-"""Metron CLI — setup multi-agent dev infra for any repo."""
+"""LBM CLI — setup multi-agent dev infra for any repo."""
 
 from pathlib import Path
 
@@ -46,16 +46,16 @@ LLM_DEFAULTS = {
 
 @click.group()
 def cli():
-    """Metron — multi-agent dev infra for competing AI implementations."""
+    """LBM — multi-agent dev infra for competing AI implementations."""
     pass
 
 
 @cli.command()
-@click.option("--metron-repo", default="henryre/metron-poc", help="Central metron repo")
-@click.option("--metron-ref", default="v1", help="Version ref to pin")
-def init(metron_repo, metron_ref):
-    """Initialize metron in the current repository."""
-    click.echo("Metron Setup\n")
+@click.option("--lbm-repo", default="henryre/lbm-poc", help="Central lbm repo")
+@click.option("--lbm-ref", default="v1", help="Version ref to pin")
+def init(lbm_repo, lbm_ref):
+    """Initialize lbm in the current repository."""
+    click.echo("LBM Setup\n")
 
     # Prompts
     runtime = click.prompt("Runtime", type=click.Choice(["node", "python", "go", "rust", "custom"]), default="node")
@@ -79,8 +79,8 @@ def init(metron_repo, metron_ref):
     agents = [DEFAULT_AGENTS[name] for name in selected_agents]
 
     context = {
-        "metron_repo": metron_repo,
-        "metron_ref": metron_ref,
+        "lbm_repo": lbm_repo,
+        "lbm_ref": lbm_ref,
         "runtime": runtime,
         "install_cmd": rt["install"],
         "lint_cmd": rt["lint"],
@@ -102,18 +102,18 @@ def init(metron_repo, metron_ref):
     workflows_dir = Path(".github/workflows")
     workflows_dir.mkdir(parents=True, exist_ok=True)
 
-    for template_name in ["metron-dispatch.yml", "metron-comments.yml", "metron-agents.yml", "metron-ci-hooks.yml"]:
+    for template_name in ["lbm-dispatch.yml", "lbm-comments.yml", "lbm-agents.yml", "lbm-ci-hooks.yml"]:
         template = env.get_template(f"{template_name}.j2")
         output = template.render(**context)
         output_path = workflows_dir / template_name
         output_path.write_text(output)
         click.echo(f"  Created {output_path}")
 
-    # Render metron.toml
-    template = env.get_template("metron.toml.j2")
+    # Render lbm.toml
+    template = env.get_template("lbm.toml.j2")
     output = template.render(**context)
-    Path("metron.toml").write_text(output)
-    click.echo("  Created metron.toml")
+    Path("lbm.toml").write_text(output)
+    click.echo("  Created lbm.toml")
 
     # Render AGENTS.md only if it doesn't exist
     if not Path("AGENTS.md").exists():
