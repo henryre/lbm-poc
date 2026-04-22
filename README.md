@@ -20,8 +20,8 @@ wrappers that call back here.
 ## Quick start
 
 ```bash
-pip install -e .
-lbm-dev init
+uv sync
+uv run lbm-dev init
 ```
 
 The `init` command walks you through setup: runtime, deploy platform, agents, and
@@ -35,7 +35,7 @@ All per-repo configuration lives in `lbm.toml` at the repo root. See
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-ruff check .
-ruff format .
+uv sync --all-extras
+uv run ruff check .
+uv run ruff format .
 ```
