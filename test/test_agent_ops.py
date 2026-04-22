@@ -277,27 +277,54 @@ class TestClosingLosingPrs:
         assert mock_gh.call_count == 1
 
 
+SAMPLE_AGENT_CODEX = AgentConfig(
+    label="agent:codex",
+    branch_prefix="codex/",
+    name="Agent B",
+    mention="@codex",
+    harness="codex",
+    model_id="gpt-5",
+    model_label="gpt-5",
+)
+
+
+def _make_config(max_repair_attempts: int = 3, max_ralph_loops: int = 2) -> LBMConfig:
+    return LBMConfig(
+        agents=[SAMPLE_AGENT_CODEX],
+        checks=ChecksConfig(
+            max_repair_attempts=max_repair_attempts,
+            max_ralph_loops=max_ralph_loops,
+        ),
+        llm=LLMConfig(),
+    )
+
+
 class TestDispatchRepair:
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.count_pr_comments")
     @patch("agent_ops.load_config")
     @patch("agent_ops.gh")
-    def test_max_repairs_reached(self, mock_gh, mock_config):
+    def test_max_repairs_reached(self, mock_gh, mock_config, mock_count_pr, mock_extract):
         mock_config.return_value = LBMConfig(
             agents=[AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")],
-            checks=ChecksConfig(max_repair_attempts=2),
+            checks=ChecksConfig(max_repair_attempts=2, max_ralph_loops=0),
             llm=LLMConfig(),
         )
         mock_gh.side_effect = [
             "claude/42-fix",  # branch
-            "2",  # repair count = 2 (at max)
-            '{"body": "Implements #42"}',  # pr body (for issue extraction — but we use --jq)
-            "",  # issue comment
+            "",               # issue comment posted by _post_manual_intervention
         ]
-        # repair_count_str "2" >= max 2, so should post "max attempts" comment
+        mock_count_pr.return_value = 2   # at max
+        mock_extract.return_value = "42"  # linked issue
+        # max_ralph_loops=0 so goes straight to manual intervention
         agent_ops.cmd_dispatch_repair(["10", "CI failed"])
+        mock_extract.assert_called_once_with("10")
 
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.count_pr_comments")
     @patch("agent_ops.load_config")
     @patch("agent_ops.gh")
-    def test_not_agent_branch(self, mock_gh, mock_config):
+    def test_not_agent_branch(self, mock_gh, mock_config, mock_count_pr, mock_extract):
         mock_config.return_value = LBMConfig(
             agents=[AgentConfig(label="agent:claude", branch_prefix="claude/", name="Agent A", mention="@claude", harness="claude", model_id="claude-opus", model_label="opus-4-6")],
             checks=ChecksConfig(max_repair_attempts=2),
@@ -307,6 +334,191 @@ class TestDispatchRepair:
         agent_ops.cmd_dispatch_repair(["10", "CI failed"])
         # Should exit early after branch lookup
         assert mock_gh.call_count == 1
+        mock_count_pr.assert_not_called()
+
+
+class TestRalphLoop:
+    @patch("agent_ops.dispatch_agent")
+    @patch("agent_ops.close_and_cleanup_pr")
+    @patch("agent_ops.call_llm")
+    @patch("agent_ops.count_issue_comments")
+    @patch("agent_ops.count_pr_comments")
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.load_config")
+    @patch("agent_ops.gh")
+    def test_ralph_restart_when_repairs_exhausted(
+        self,
+        mock_gh,
+        mock_load_config,
+        mock_extract_issue,
+        mock_count_pr,
+        mock_count_issue,
+        mock_call_llm,
+        mock_close_cleanup,
+        mock_dispatch,
+    ):
+        """Repairs exhausted, ralph not yet used: close PR and restart agent."""
+        mock_load_config.return_value = _make_config(max_repair_attempts=3, max_ralph_loops=2)
+        mock_gh.side_effect = [
+            "codex/42-fix",  # branch lookup
+            "",              # gh pr diff (inside _summarize_failed_attempt)
+            "",              # issue comment for ralph-restart
+        ]
+        mock_extract_issue.return_value = "42"
+        mock_count_pr.return_value = 3          # at max repairs
+        mock_count_issue.return_value = 0       # no ralph restarts yet
+        mock_call_llm.return_value = "Added a Footer component but tests kept failing."
+
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            agent_ops.cmd_dispatch_repair(["10", "CI lint failed"])
+
+        # PR should be closed
+        mock_close_cleanup.assert_called_once()
+        close_args = mock_close_cleanup.call_args[0]
+        assert close_args[0] == "10"
+
+        # Agent should be re-dispatched
+        mock_dispatch.assert_called_once_with("42", "codex")
+
+        # Issue comment should mention [ralph-restart 1]
+        issue_comment_calls = [
+            c for c in mock_gh.call_args_list
+            if len(c[0]) >= 3 and c[0][0] == "issue" and c[0][1] == "comment"
+        ]
+        assert len(issue_comment_calls) == 1
+        comment_body = issue_comment_calls[0][1]["body"] if issue_comment_calls[0][1] else issue_comment_calls[0][0][-1]
+        # body is passed as keyword arg to gh()
+        all_args_str = str(mock_gh.call_args_list)
+        assert "[ralph-restart 1]" in all_args_str
+
+    @patch("agent_ops.dispatch_agent")
+    @patch("agent_ops.close_and_cleanup_pr")
+    @patch("agent_ops.call_llm")
+    @patch("agent_ops.count_issue_comments")
+    @patch("agent_ops.count_pr_comments")
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.load_config")
+    @patch("agent_ops.gh")
+    def test_manual_intervention_when_ralph_exhausted(
+        self,
+        mock_gh,
+        mock_load_config,
+        mock_extract_issue,
+        mock_count_pr,
+        mock_count_issue,
+        mock_call_llm,
+        mock_close_cleanup,
+        mock_dispatch,
+    ):
+        """Ralph loops also exhausted: post manual intervention, no restart."""
+        mock_load_config.return_value = _make_config(max_repair_attempts=3, max_ralph_loops=2)
+        # gh is called for: branch lookup, issue comment
+        mock_gh.side_effect = [
+            "codex/42-fix",  # branch lookup
+            "",              # issue comment for manual intervention
+        ]
+        mock_extract_issue.return_value = "42"
+        mock_count_pr.return_value = 3    # at max repairs
+        mock_count_issue.return_value = 2  # at max ralph loops
+
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            agent_ops.cmd_dispatch_repair(["10", "CI failed"])
+
+        mock_dispatch.assert_not_called()
+        mock_close_cleanup.assert_not_called()
+
+        # The issue comment call should contain "manual intervention"
+        issue_comment_calls = [
+            c for c in mock_gh.call_args_list
+            if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
+        ]
+        assert len(issue_comment_calls) == 1
+        comment_body = issue_comment_calls[0][0][-1]
+        assert "Manual intervention" in comment_body
+
+    @patch("agent_ops.dispatch_agent")
+    @patch("agent_ops.close_and_cleanup_pr")
+    @patch("agent_ops.count_issue_comments")
+    @patch("agent_ops.count_pr_comments")
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.load_config")
+    @patch("agent_ops.gh")
+    def test_ralph_disabled_when_zero(
+        self,
+        mock_gh,
+        mock_load_config,
+        mock_extract_issue,
+        mock_count_pr,
+        mock_count_issue,
+        mock_close_cleanup,
+        mock_dispatch,
+    ):
+        """max_ralph_loops=0: skip ralph entirely, post manual intervention."""
+        mock_load_config.return_value = _make_config(max_repair_attempts=3, max_ralph_loops=0)
+        # gh is called for: branch lookup, issue comment
+        mock_gh.side_effect = [
+            "codex/42-fix",  # branch lookup
+            "",              # issue comment
+        ]
+        mock_extract_issue.return_value = "42"
+        mock_count_pr.return_value = 3  # at max repairs
+
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}):
+            agent_ops.cmd_dispatch_repair(["10", "CI failed"])
+
+        mock_count_issue.assert_not_called()
+        mock_dispatch.assert_not_called()
+
+        # The issue comment call should contain "manual intervention"
+        issue_comment_calls = [
+            c for c in mock_gh.call_args_list
+            if len(c[0]) >= 2 and c[0][0] == "issue" and c[0][1] == "comment"
+        ]
+        assert len(issue_comment_calls) == 1
+        comment_body = issue_comment_calls[0][0][-1]
+        assert "Manual intervention" in comment_body
+
+    @patch("agent_ops.dispatch_agent")
+    @patch("agent_ops.close_and_cleanup_pr")
+    @patch("agent_ops.count_issue_comments")
+    @patch("agent_ops.count_pr_comments")
+    @patch("agent_ops.extract_issue_from_pr")
+    @patch("agent_ops.load_config")
+    @patch("agent_ops.gh")
+    def test_normal_repair_when_under_max(
+        self,
+        mock_gh,
+        mock_load_config,
+        mock_extract_issue,
+        mock_count_pr,
+        mock_count_issue,
+        mock_close_cleanup,
+        mock_dispatch,
+    ):
+        """Under max repairs: dispatch a repair comment, no ralph logic."""
+        config = LBMConfig(
+            agents=[SAMPLE_AGENT_CODEX],
+            checks=ChecksConfig(max_repair_attempts=10, max_ralph_loops=2),
+            llm=LLMConfig(),
+        )
+        mock_load_config.return_value = config
+        mock_gh.return_value = "codex/42-fix"  # branch lookup
+        mock_count_pr.return_value = 2  # under max of 10
+
+        with patch.dict(os.environ, {"PAT_TOKEN": "fake-pat", "GITHUB_REPOSITORY": "owner/repo"}):
+            with patch("agent_ops.subprocess.run") as mock_subproc:
+                mock_subproc.return_value = None
+                agent_ops.cmd_dispatch_repair(["10", "CI lint failed"])
+
+        # subprocess.run should have been called to post repair comment
+        mock_subproc.assert_called_once()
+        subproc_args = mock_subproc.call_args[0][0]
+        assert subproc_args[:3] == ["gh", "pr", "comment"]
+
+        # No ralph logic should fire
+        mock_count_issue.assert_not_called()
+        mock_dispatch.assert_not_called()
+        mock_close_cleanup.assert_not_called()
 
 
 class TestUpdateStatus:

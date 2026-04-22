@@ -30,7 +30,7 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib
 
-from models import AgentConfig, LBMConfig, LLMConfig
+from models import AgentConfig, ChecksConfig, LBMConfig, LLMConfig
 
 CONFIG_PATH = os.environ.get(
     "LBM_CONFIG_PATH",
@@ -523,7 +523,7 @@ def cmd_close_losing_prs(args: list[str]) -> None:
 
 
 def cmd_dispatch_repair(args: list[str]) -> None:
-    """Dispatch a repair request to an agent for a failing PR."""
+    """Dispatch a repair or ralph restart for a failing PR."""
     if len(args) < 2:
         print("Usage: dispatch-repair <pr_number> <failure_context>", file=sys.stderr)
         sys.exit(1)
@@ -532,59 +532,48 @@ def cmd_dispatch_repair(args: list[str]) -> None:
     failure_context = args[1]
 
     config = load_config()
-    max_repairs = config.checks.max_repair_attempts
-    agents = config.agents
 
     branch = gh("pr", "view", pr_num, "--json", "headRefName", "--jq", ".headRefName", check=False)
     if not branch:
         print(f"PR #{pr_num} not found")
         return
 
-    agent = branch_to_agent(agents, branch)
+    agent = branch_to_agent(config.agents, branch)
     if not agent:
         print(f"Not an agent branch: {branch}")
         return
 
-    agent_name = agent.name
-    mention = agent.mention
+    repair_count = count_pr_comments(pr_num, "repair-attempt")
+    print(f"{agent.name} PR #{pr_num}: {repair_count} / {config.checks.max_repair_attempts} repairs")
 
-    repair_count_str = gh(
-        "pr",
-        "view",
-        pr_num,
-        "--json",
-        "comments",
-        "--jq",
-        '[.comments[].body | select(contains("[repair-attempt]"))] | length',
-        check=False,
-    )
-    repair_count = int(repair_count_str) if repair_count_str.isdigit() else 0
-
-    print(f"{agent_name} PR #{pr_num}: {repair_count} / {max_repairs} repairs")
-
-    if repair_count >= max_repairs:
-        print("Max repair attempts reached")
-        pr_body = gh("pr", "view", pr_num, "--json", "body", "--jq", ".body", check=False)
-        m = re.search(r"Implements #(\d+)", pr_body)
-        if m:
-            issue_num = m.group(1)
-            gh(
-                "issue",
-                "comment",
-                issue_num,
-                "--body",
-                f"{agent_name} PR #{pr_num} has failed after {max_repairs} repair attempts."
-                " Manual intervention needed.",
-            )
+    if repair_count < config.checks.max_repair_attempts:
+        _dispatch_repair_comment(pr_num, agent, failure_context)
         return
 
+    # Repairs exhausted — try ralph restart
+    issue_num = extract_issue_from_pr(pr_num)
+    if not issue_num:
+        print("Cannot find linked issue for ralph restart")
+        return
+
+    if config.checks.max_ralph_loops > 0:
+        ralph_count = count_issue_comments(issue_num, "ralph-restart", agent.name)
+        if ralph_count < config.checks.max_ralph_loops:
+            _ralph_restart(pr_num, issue_num, agent, config, ralph_count, failure_context)
+            return
+
+    _post_manual_intervention(issue_num, agent, pr_num, config.checks)
+
+
+def _dispatch_repair_comment(pr_num: str, agent: AgentConfig, failure_context: str) -> None:
+    """Post a repair-attempt comment on the PR to trigger the agent."""
     pat_token = os.environ.get("PAT_TOKEN", "")
-    if not mention or not pat_token:
+    if not agent.mention or not pat_token:
         print("Cannot dispatch repair (no mention or no PAT_TOKEN)")
         return
 
     repair_body = (
-        f"{mention} [repair-attempt] {failure_context}\n\n"
+        f"{agent.mention} [repair-attempt] {failure_context}\n\n"
         f"Fix ALL errors listed above -- there may be multiple issues across lint, typecheck, and build.\n"
         f"Before committing, run the full CI check locally.\n"
         f"Only commit and push when ALL steps pass."
@@ -596,8 +585,70 @@ def cmd_dispatch_repair(args: list[str]) -> None:
         env=env,
         check=False,
     )
+    repair_count = count_pr_comments(pr_num, "repair-attempt")
+    print(f"Dispatched repair attempt {repair_count} for {agent.name} PR #{pr_num}")
 
-    print(f"Dispatched repair attempt {repair_count + 1} for {agent_name} PR #{pr_num}")
+
+def _ralph_restart(
+    pr_num: str,
+    issue_num: str,
+    agent: AgentConfig,
+    config: LBMConfig,
+    ralph_count: int,
+    failure_context: str,
+) -> None:
+    """Wipe the PR and restart the agent from scratch."""
+    max_loops = config.checks.max_ralph_loops
+    attempt = ralph_count + 1
+
+    summary = _summarize_failed_attempt(pr_num, failure_context, config.llm)
+
+    close_and_cleanup_pr(pr_num, f"Closing for ralph restart (attempt {attempt}/{max_loops}).")
+
+    restart_body = (
+        f"[ralph-restart {attempt}] {agent.name} — restarting after "
+        f"{config.checks.max_repair_attempts} failed repairs on PR #{pr_num}."
+    )
+    if summary:
+        restart_body += f"\n\nPrevious approach: {summary}"
+    gh("issue", "comment", issue_num, "--body", restart_body)
+
+    dispatch_agent(issue_num, agent.harness)
+    print(f"Ralph restart {attempt}/{max_loops} for {agent.name} on issue #{issue_num}")
+
+
+def _summarize_failed_attempt(pr_num: str, failure_context: str, llm_config: LLMConfig) -> str:
+    """Generate a 2-3 sentence summary of a failed PR approach."""
+    diff = gh("pr", "diff", pr_num, check=False)
+    if not diff.strip():
+        return ""
+
+    truncated_diff = diff[:50000]
+    truncated_context = failure_context[:2000]
+
+    prompt = (
+        "Summarize in 2-3 sentences what approach this PR took and why it kept failing. "
+        "Focus on the overall strategy and the root cause of failure, not individual errors.\n\n"
+        f"## Last CI errors\n{truncated_context}\n\n"
+        f"## PR diff (truncated)\n```diff\n{truncated_diff}\n```"
+    )
+
+    return call_llm(prompt, llm_config) or ""
+
+
+def _post_manual_intervention(issue_num: str, agent: AgentConfig, pr_num: str, checks: ChecksConfig) -> None:
+    """Post the terminal failure message on the issue."""
+    if checks.max_ralph_loops > 0:
+        msg = (
+            f"{agent.name} PR #{pr_num} has failed after {checks.max_ralph_loops} restart cycles "
+            f"({checks.max_repair_attempts} repairs each). Manual intervention needed."
+        )
+    else:
+        msg = (
+            f"{agent.name} PR #{pr_num} has failed after {checks.max_repair_attempts} repair attempts. "
+            f"Manual intervention needed."
+        )
+    gh("issue", "comment", issue_num, "--body", msg)
 
 
 def cmd_update_status(args: list[str]) -> None:
