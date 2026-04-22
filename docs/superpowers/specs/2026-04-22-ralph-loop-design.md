@@ -73,17 +73,78 @@ criteria.
 
 All changes in `lbm-poc`. No target repo changes needed.
 
+### Design constraint: clean top-level procedures
+
+`agent_ops.py` is ~820 lines and growing. The `cmd_*` functions currently mix
+orchestration logic with low-level `gh` calls and string parsing. As the ralph
+loop adds another layer of decision-making, the top-level procedures must read
+clearly and delegate to self-describing helpers.
+
+**Principle:** Top-level `cmd_*` functions should read like a narrative — load
+config, identify the agent, check counters, decide action, execute. All
+mechanics (counting comments, closing PRs, calling LLMs, dispatching workflows)
+live in reusable helpers with descriptive names.
+
+**New abstractions** (somewhat general-purpose, usable beyond just ralph):
+
+- `count_issue_comments(issue_num, marker, scope=None)` — count comments on an
+  issue matching a `[marker]` tag, optionally scoped to a string (e.g. agent
+  letter). Replaces the inline `gh pr view ... | select(contains(...))` pattern
+  used for repair counting too.
+- `close_and_cleanup_pr(pr_num, comment)` — close a PR, delete its remote
+  branch. Reusable for ralph restarts, losing-PR cleanup, etc.
+- `dispatch_agent(issue_num, agent_harness)` — re-dispatch an agent workflow
+  via `gh workflow run`. Encapsulates the workflow filename and input mapping.
+- `summarize_failed_attempt(pr_num, failure_context)` — generate an LLM
+  summary of the PR's approach and failure. Builds on the existing LLM call
+  infrastructure in `cmd_summarize_pr` (which should itself be refactored to
+  use a shared `call_llm(prompt)` helper).
+- `call_llm(prompt)` — shared LLM call using the `[llm]` config. Extracted
+  from the ~60 lines of HTTP/provider logic currently inlined in
+  `cmd_summarize_pr`.
+
+**Refactored `cmd_dispatch_repair` reads like:**
+
+```python
+def cmd_dispatch_repair(args):
+    pr_num, failure_context = parse_args(args)
+    config = load_config()
+    agent = identify_agent_from_pr(pr_num, config)
+    issue_num = extract_issue_from_pr(pr_num)
+
+    repair_count = count_pr_comments(pr_num, "repair-attempt")
+
+    if repair_count < config["max_repair_attempts"]:
+        dispatch_repair_comment(pr_num, agent, failure_context)
+        return
+
+    # Repairs exhausted — try ralph restart
+    ralph_count = count_issue_comments(issue_num, "ralph-restart", agent["name"])
+
+    if config["max_ralph_loops"] > 0 and ralph_count < config["max_ralph_loops"]:
+        summary = summarize_failed_attempt(pr_num, failure_context)
+        close_and_cleanup_pr(pr_num, f"Closing for ralph restart ({ralph_count + 1}/{config['max_ralph_loops']}).")
+        post_ralph_restart(issue_num, agent, ralph_count + 1, pr_num, summary)
+        dispatch_agent(issue_num, agent["harness"])
+        return
+
+    # Truly exhausted
+    post_manual_intervention(issue_num, agent, pr_num, config)
+```
+
+The existing repair-counting pattern (inline `gh pr view ... --jq ...`) should
+also be migrated to `count_pr_comments(pr_num, "repair-attempt")` for
+consistency, but that's a cleanup — not a blocker for ralph.
+
 ### `scripts/agent_ops.py`
 
-Modify `cmd_dispatch_repair()`:
-- After detecting repairs exhausted, insert ralph loop logic before the
-  "manual intervention needed" fallback.
-- New helper `count_ralph_restarts(issue_num, agent_letter)`: counts
-  `[ralph-restart]` comments on the issue scoped to the agent letter.
-- New helper `summarize_failed_attempt(pr_num, context)`: calls the LLM
-  summary path with a prompt like "Summarize in 2-3 sentences what approach
-  this PR took and why it kept failing." Uses PR diff + last CI errors as
-  input.
+- Extract `call_llm(prompt)` from `cmd_summarize_pr` — shared LLM call helper.
+- Add helpers: `count_issue_comments`, `count_pr_comments`,
+  `close_and_cleanup_pr`, `dispatch_agent`, `summarize_failed_attempt`,
+  `post_ralph_restart`, `post_manual_intervention`.
+- Refactor `cmd_dispatch_repair()` to use these helpers, with ralph loop logic
+  as shown above.
+- Refactor `cmd_summarize_pr()` to use `call_llm`.
 
 ### `scripts/config_parser.py`
 
@@ -95,11 +156,13 @@ Add `max_ralph_loops = 0` under `[checks]` with a comment.
 
 ### `test/`
 
-- Ralph counter parsing (scoped per agent letter).
+- `count_issue_comments` / `count_pr_comments`: marker matching, scoping.
+- Ralph counter: scoped per agent letter.
 - Max cap enforcement: ralph triggers at repair exhaustion when under cap.
-- Disabled when `max_ralph_loops = 0`: falls through to "manual intervention".
-- Re-dispatch called with correct `issue_number` and `agent` inputs.
-- LLM summary generation for the approach description.
+- Disabled when `max_ralph_loops = 0`: falls through to manual intervention.
+- `dispatch_agent` called with correct `issue_number` and `agent` inputs.
+- `summarize_failed_attempt`: LLM prompt construction and summary extraction.
+- `call_llm`: provider routing, error handling.
 
 ### No workflow changes
 
