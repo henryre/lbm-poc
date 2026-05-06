@@ -39,6 +39,22 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
@@ -47,7 +63,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Read deploy config
         id: config
@@ -145,7 +161,7 @@ jobs:
       - name: Report preview URL
         if: steps.fly-deploy.outputs.deploy_failed == 'false' && inputs.issue_number != ''
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
@@ -166,7 +182,7 @@ jobs:
       - name: Dispatch repair on failure
         if: steps.fly-deploy.outputs.deploy_failed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
@@ -186,6 +202,22 @@ jobs:
     permissions:
       packages: write
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -194,7 +226,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Read deploy config
         id: config

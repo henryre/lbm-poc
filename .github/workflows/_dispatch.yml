@@ -23,6 +23,22 @@ jobs:
       github.event.action == 'labeled'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -31,7 +47,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Parse config
         id: config
@@ -55,12 +71,18 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check token availability
+        if: steps.config.outputs.skip == 'false'
+        run: |
+          if [ -z "$LBM_TOKEN" ]; then
+            echo "::warning::Neither LBM App secrets nor PAT_TOKEN configured"
+          fi
+
       - name: Preflight checks
         if: steps.config.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
-          HAS_PAT: ${{ secrets.PAT_TOKEN && 'true' || 'false' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY && 'true' || 'false' }}
           HAS_PORTKEY: ${{ secrets.PORTKEY_API_KEY && 'true' || 'false' }}
           HAS_OPENAI: ${{ secrets.OPENAI_API_KEY && 'true' || 'false' }}
@@ -68,11 +90,6 @@ jobs:
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
           WARNINGS=""
-
-          # Check PAT_TOKEN (always required)
-          if [ "$HAS_PAT" != "true" ]; then
-            WARNINGS="${WARNINGS}\n- **PAT_TOKEN** secret missing — agent dispatch will fail"
-          fi
 
           # Check per-harness secrets
           MISSING_SECRETS=$(python3 -c "
@@ -148,7 +165,7 @@ jobs:
       - name: Dispatch agents
         if: steps.config.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
@@ -188,6 +205,22 @@ jobs:
       github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -196,7 +229,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Close all agent PRs for this issue
         env:

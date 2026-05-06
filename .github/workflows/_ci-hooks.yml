@@ -23,6 +23,22 @@ jobs:
       github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -31,12 +47,12 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Dispatch repair for CI failure
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
@@ -76,6 +92,22 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -84,7 +116,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Merge pending PRs
         env:
@@ -129,6 +161,22 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -137,7 +185,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Check if active deploy platform and agent branch
         id: check
@@ -187,7 +235,7 @@ jobs:
         if: steps.check.outputs.is_active == 'true' && steps.check.outputs.is_agent == 'true' && steps.check.outputs.pr_number != ''
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PAT_TOKEN }}
+          github-token: ${{ env.LBM_TOKEN }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
@@ -212,6 +260,22 @@ jobs:
       github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -220,7 +284,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Check if active deploy and agent branch
         id: check
@@ -246,7 +310,7 @@ jobs:
         if: steps.check.outputs.is_active == 'true' && steps.check.outputs.is_agent == 'true'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PAT_TOKEN }}
+          github-token: ${{ env.LBM_TOKEN }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
@@ -270,6 +334,22 @@ jobs:
       github.event.deployment_status.environment == 'Preview'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -278,12 +358,12 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Dispatch repair for deploy failure
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
@@ -357,6 +437,22 @@ jobs:
       github.event.deployment_status.environment == 'Preview'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -365,7 +461,7 @@ jobs:
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Find PR and post preview + summary
         env:

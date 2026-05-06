@@ -34,13 +34,29 @@ jobs:
     env:
       ISSUE_NUM: ${{ inputs.issue_number }}
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/checkout@v4
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Parse config
         id: config
@@ -158,7 +174,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           # Preserve lbm scripts outside the working tree so they survive git ops
@@ -224,13 +240,29 @@ jobs:
     env:
       ISSUE_NUM: ${{ inputs.issue_number }}
     steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/checkout@v4
         with:
           repository: henryre/lbm-poc
           path: .lbm
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ env.LBM_TOKEN }}
 
       - name: Parse config
         id: config
@@ -312,7 +344,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
           PATCH_FILTERS: ${{ steps.config.outputs.patch_filters }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
