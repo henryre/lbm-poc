@@ -10,7 +10,7 @@ from unittest.mock import patch
 # Add scripts/ to path so we can import agent_ops
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import agent_ops
-from models import AgentConfig, ChecksConfig, LBMConfig, LLMConfig
+from models import AgentConfig, ChecksConfig, DeployConfig, LBMConfig, LLMConfig
 
 # ---------------------------------------------------------------------------
 # Pure function tests: agent lookup
@@ -346,6 +346,7 @@ def _make_config(max_repair_attempts: int = 3, max_ralph_loops: int = 2) -> LBMC
             max_ralph_loops=max_ralph_loops,
         ),
         llm=LLMConfig(),
+        deploy=DeployConfig(),
     )
 
 
@@ -369,6 +370,7 @@ class TestDispatchRepair:
             ],
             checks=ChecksConfig(max_repair_attempts=2, max_ralph_loops=0),
             llm=LLMConfig(),
+            deploy=DeployConfig(),
         )
         mock_gh.side_effect = [
             "claude/42-fix",  # branch
@@ -399,6 +401,7 @@ class TestDispatchRepair:
             ],
             checks=ChecksConfig(max_repair_attempts=2),
             llm=LLMConfig(),
+            deploy=DeployConfig(),
         )
         mock_gh.return_value = "feature/something"  # not an agent branch
         agent_ops.cmd_dispatch_repair(["10", "CI failed"])
@@ -565,6 +568,7 @@ class TestRalphLoop:
             agents=[SAMPLE_AGENT_CODEX],
             checks=ChecksConfig(max_repair_attempts=10, max_ralph_loops=2),
             llm=LLMConfig(),
+            deploy=DeployConfig(),
         )
         mock_load_config.return_value = config
         mock_gh.return_value = "codex/42-fix"  # branch lookup

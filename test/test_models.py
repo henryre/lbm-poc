@@ -7,7 +7,7 @@ import os, sys  # noqa: E401
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import pytest  # noqa: E402, I001
-from models import AgentConfig, ChecksConfig, LLMConfig, LBMConfig  # noqa: E402
+from models import AgentConfig, ChecksConfig, DeployConfig, LLMConfig, LBMConfig  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Sample TOML dicts (as parsed by tomllib)
@@ -167,6 +167,47 @@ class TestLLMConfig:
 
 
 # ---------------------------------------------------------------------------
+# DeployConfig tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeployConfig:
+    def test_from_dict_full(self):
+        d = {
+            "platform": "fly",
+            "preview_env": "Preview",
+            "app_prefix": "myapp-pr",
+            "region": "iad",
+            "registry": "ghcr",
+        }
+        cfg = DeployConfig.from_dict(d)
+        assert cfg.platform == "fly"
+        assert cfg.preview_env == "Preview"
+        assert cfg.app_prefix == "myapp-pr"
+        assert cfg.region == "iad"
+        assert cfg.registry == "ghcr"
+
+    def test_from_dict_defaults(self):
+        d = {"platform": "vercel"}
+        cfg = DeployConfig.from_dict(d)
+        assert cfg.platform == "vercel"
+        assert cfg.preview_env == "Preview"
+        assert cfg.app_prefix == ""
+        assert cfg.region == "iad"
+        assert cfg.registry == "ghcr"
+
+    def test_from_dict_empty(self):
+        cfg = DeployConfig.from_dict({})
+        assert cfg.platform == "none"
+
+    def test_is_active(self):
+        assert DeployConfig.from_dict({"platform": "fly"}).is_active is True
+        assert DeployConfig.from_dict({"platform": "railway"}).is_active is True
+        assert DeployConfig.from_dict({"platform": "vercel"}).is_active is False
+        assert DeployConfig.from_dict({"platform": "none"}).is_active is False
+
+
+# ---------------------------------------------------------------------------
 # LBMConfig tests
 # ---------------------------------------------------------------------------
 
@@ -206,6 +247,9 @@ class TestLBMConfig:
         assert cfg.llm.provider == "portkey"
         assert cfg.llm.summary_model == "custom-model"
 
+        # Deploy defaults (no [deploy] section in FULL_TOML_DICT)
+        assert cfg.deploy.platform == "none"
+
     def test_from_parsed_toml_minimal(self):
         cfg = LBMConfig.from_parsed_toml(MINIMAL_TOML_DICT)
 
@@ -225,6 +269,10 @@ class TestLBMConfig:
         # LLM uses defaults
         assert cfg.llm.provider == "anthropic"
         assert cfg.llm.summary_model == "claude-sonnet-4-6"
+
+        # Deploy uses defaults
+        assert cfg.deploy.platform == "none"
+        assert cfg.deploy.is_active is False
 
     def test_from_parsed_toml_with_override_label(self):
         raw = {

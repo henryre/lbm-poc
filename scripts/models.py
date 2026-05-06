@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 AGENT_NAME_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ACTIVE_DEPLOY_PLATFORMS = ("fly", "railway")
 
 
 @dataclass(frozen=True)
@@ -65,11 +66,35 @@ class LLMConfig:
         )
 
 
+@dataclass(frozen=True)
+class DeployConfig:
+    platform: str = "none"
+    preview_env: str = "Preview"
+    app_prefix: str = ""
+    region: str = "iad"
+    registry: str = "ghcr"
+
+    @property
+    def is_active(self) -> bool:
+        return self.platform in ACTIVE_DEPLOY_PLATFORMS
+
+    @classmethod
+    def from_dict(cls, d: dict) -> DeployConfig:
+        return cls(
+            platform=d.get("platform", "none"),
+            preview_env=d.get("preview_env", "Preview"),
+            app_prefix=d.get("app_prefix", ""),
+            region=d.get("region", "iad"),
+            registry=d.get("registry", "ghcr"),
+        )
+
+
 @dataclass
 class LBMConfig:
     agents: list[AgentConfig]
     checks: ChecksConfig
     llm: LLMConfig
+    deploy: DeployConfig
 
     @classmethod
     def from_parsed_toml(cls, raw: dict) -> LBMConfig:
@@ -123,5 +148,6 @@ class LBMConfig:
 
         checks = ChecksConfig.from_dict(raw.get("checks", {}))
         llm = LLMConfig.from_dict(raw.get("llm", {}))
+        deploy = DeployConfig.from_dict(raw.get("deploy", {}))
 
-        return cls(agents=agents, checks=checks, llm=llm)
+        return cls(agents=agents, checks=checks, llm=llm, deploy=deploy)
