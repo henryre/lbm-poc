@@ -1,0 +1,242 @@
+name: "LBM: Deploy to Fly.io"
+
+# Reusable workflow — deploys or destroys a Fly.io preview machine.
+# Called by _ci-hooks.yml on CI success (deploy) or PR close (destroy).
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "'deploy' or 'destroy'"
+        required: true
+        type: string
+      pr_number:
+        description: "PR number"
+        required: true
+        type: string
+      branch:
+        description: "Head branch name"
+        required: false
+        type: string
+        default: ""
+      issue_number:
+        description: "Linked issue number"
+        required: false
+        type: string
+        default: ""
+      config-path:
+        description: "Path to lbm.toml"
+        required: false
+        type: string
+        default: "lbm.toml"
+
+jobs:
+  deploy:
+    if: inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    environment: Preview
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Read deploy config
+        id: config
+        run: |
+          DEPLOY_CONFIG=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from config_parser import load_config, get_deploy_config
+          cfg = load_config('${{ inputs.config-path }}')
+          dc = get_deploy_config(cfg)
+          print(f\"app_prefix={dc['app_prefix']}\")
+          print(f\"region={dc['region']}\")
+          ")
+          echo "$DEPLOY_CONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:pr-${{ inputs.pr_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        id: fly-deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP_NAME="${{ steps.config.outputs.app_prefix }}-${{ inputs.pr_number }}"
+          REGION="${{ steps.config.outputs.region }}"
+          IMAGE="ghcr.io/${{ github.repository }}:pr-${{ inputs.pr_number }}"
+
+          # Create app if it doesn't exist
+          if ! flyctl apps list --json | grep -q "\"$APP_NAME\""; then
+            flyctl apps create "$APP_NAME" --org personal
+          fi
+
+          # Deploy the image
+          flyctl deploy \
+            --app "$APP_NAME" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --ha=false \
+            --vm-size shared-cpu-2x \
+            --vm-memory 1024 \
+            --env BACKEND_PORT=8001 \
+            --env FRONTEND_PORT=3782 \
+            --env LLM_BINDING="${{ vars.LLM_BINDING || 'openai' }}" \
+            --env LLM_MODEL="${{ vars.LLM_MODEL || 'gpt-4o-mini' }}" \
+            --env LLM_HOST="${{ vars.LLM_HOST || 'https://api.openai.com/v1' }}" \
+            --env EMBEDDING_BINDING="${{ vars.EMBEDDING_BINDING || 'openai' }}" \
+            --env EMBEDDING_MODEL="${{ vars.EMBEDDING_MODEL || 'text-embedding-3-large' }}" \
+            --env EMBEDDING_HOST="${{ vars.EMBEDDING_HOST || 'https://api.openai.com/v1/embeddings' }}" \
+            2>&1 | tee /tmp/deploy.log
+
+          DEPLOY_EXIT=$?
+          if [ $DEPLOY_EXIT -ne 0 ]; then
+            echo "deploy_failed=true" >> "$GITHUB_OUTPUT"
+            LOGS=$(tail -50 /tmp/deploy.log)
+            echo "deploy_logs<<EOFLOG" >> "$GITHUB_OUTPUT"
+            echo "$LOGS" >> "$GITHUB_OUTPUT"
+            echo "EOFLOG" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_failed=false" >> "$GITHUB_OUTPUT"
+            echo "preview_url=https://${APP_NAME}.fly.dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set Fly secrets
+        if: steps.fly-deploy.outputs.deploy_failed == 'false'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP_NAME="${{ steps.config.outputs.app_prefix }}-${{ inputs.pr_number }}"
+          flyctl secrets set \
+            --app "$APP_NAME" \
+            LLM_API_KEY="${{ secrets.LLM_API_KEY }}" \
+            EMBEDDING_API_KEY="${{ secrets.EMBEDDING_API_KEY }}" \
+            2>/dev/null || true
+
+      - name: Report preview URL
+        if: steps.fly-deploy.outputs.deploy_failed == 'false' && inputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          PREVIEW_URL="${{ steps.fly-deploy.outputs.preview_url }}"
+          BRANCH="${{ inputs.branch }}"
+
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          if [ -z "$AGENT_INFO" ]; then
+            echo "Not an agent branch: $BRANCH"
+            exit 0
+          fi
+
+          AGENT_LABEL=$(echo "$AGENT_INFO" | grep "^label=" | cut -d= -f2)
+          python3 .lbm/scripts/agent_ops.py update-status \
+            "${{ inputs.issue_number }}" "$AGENT_LABEL" "preview" \
+            "${{ inputs.pr_number }}" "$PREVIEW_URL" || true
+
+      - name: Dispatch repair on failure
+        if: steps.fly-deploy.outputs.deploy_failed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          LOGS="${{ steps.fly-deploy.outputs.deploy_logs }}"
+          python3 .lbm/scripts/agent_ops.py dispatch-repair \
+            "${{ inputs.pr_number }}" \
+            "Deployment to Fly.io failed (CI passed but deploy did not). Likely causes: missing env vars, runtime errors during startup, port binding issues.
+
+          Deploy logs:
+          \`\`\`
+          ${LOGS}
+          \`\`\`"
+
+  destroy:
+    if: inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Read deploy config
+        id: config
+        run: |
+          DEPLOY_CONFIG=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from config_parser import load_config, get_deploy_config
+          cfg = load_config('${{ inputs.config-path }}')
+          dc = get_deploy_config(cfg)
+          print(f\"app_prefix={dc['app_prefix']}\")
+          ")
+          echo "$DEPLOY_CONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Destroy Fly app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP_NAME="${{ steps.config.outputs.app_prefix }}-${{ inputs.pr_number }}"
+          flyctl apps destroy "$APP_NAME" --yes 2>/dev/null || echo "App $APP_NAME not found (already destroyed)"
+
+      - name: Delete GHCR image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          PACKAGE_NAME=$(echo "$REPO" | cut -d/ -f2)
+          TAG="pr-${{ inputs.pr_number }}"
+
+          # Find the version ID for this tag
+          VERSION_ID=$(gh api \
+            "/user/packages/container/${PACKAGE_NAME}/versions" \
+            --jq ".[] | select(.metadata.container.tags[] == \"${TAG}\") | .id" \
+            2>/dev/null || echo "")
+
+          if [ -n "$VERSION_ID" ]; then
+            gh api --method DELETE \
+              "/user/packages/container/${PACKAGE_NAME}/versions/${VERSION_ID}" \
+              2>/dev/null || echo "Failed to delete image tag ${TAG}"
+            echo "Deleted GHCR image tag: ${TAG}"
+          else
+            echo "No GHCR image found for tag: ${TAG}"
+          fi
