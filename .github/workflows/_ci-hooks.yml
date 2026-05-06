@@ -1,7 +1,7 @@
 name: "LBM: CI Hooks (Self-Heal + Preview + Deploy)"
 
-# Reusable workflow — called by target repos on workflow_run + deployment_status.
-# Handles CI failure repair, auto-merge, deploy failure repair, and preview link posting.
+# Reusable workflow — called by target repos on workflow_run + deployment_status + pull_request(closed).
+# Handles CI failure repair, auto-merge, deploy failure repair, preview link posting, and cleanup.
 
 on:
   workflow_call:
@@ -119,6 +119,146 @@ jobs:
           else
             gh pr edit "$PR_NUM" --add-label "merge-pending" || true
           fi
+
+  # -----------------------------------------------------------------------
+  # Deploy (active platforms) — build + deploy on CI success
+  # -----------------------------------------------------------------------
+  deploy-active:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Check if active deploy platform and agent branch
+        id: check
+        env:
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IS_ACTIVE=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from config_parser import load_config, is_active_deploy_platform
+          cfg = load_config('${{ inputs.config-path }}')
+          print('true' if is_active_deploy_platform(cfg) else 'false')
+          ")
+          echo "is_active=$IS_ACTIVE" >> "$GITHUB_OUTPUT"
+
+          if [ "$IS_ACTIVE" = "false" ]; then
+            echo "Not an active deploy platform, skipping"
+            exit 0
+          fi
+
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          PR_NUM=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+          echo "pr_number=$PR_NUM" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$PR_NUM" ]; then
+            echo "No PR for branch $BRANCH"
+            exit 0
+          fi
+
+          # Check if this is an agent branch
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          if [ -z "$AGENT_INFO" ]; then
+            echo "Not an agent branch: $BRANCH"
+            echo "is_agent=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "is_agent=true" >> "$GITHUB_OUTPUT"
+
+          # Get issue number from PR body
+          PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null || echo "")
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' || echo "")
+          echo "issue_number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch Fly deploy
+        if: steps.check.outputs.is_active == 'true' && steps.check.outputs.is_agent == 'true' && steps.check.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: '_deploy-fly.yml',
+              ref: 'main',
+              inputs: {
+                action: 'deploy',
+                pr_number: '${{ steps.check.outputs.pr_number }}',
+                branch: '${{ steps.check.outputs.branch }}',
+                issue_number: '${{ steps.check.outputs.issue_number }}',
+                'config-path': '${{ inputs.config-path }}',
+              }
+            });
+
+  # -----------------------------------------------------------------------
+  # Cleanup — destroy preview on PR close (active platforms only)
+  # -----------------------------------------------------------------------
+  cleanup:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Check if active deploy and agent branch
+        id: check
+        run: |
+          IS_ACTIVE=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from config_parser import load_config, is_active_deploy_platform
+          cfg = load_config('${{ inputs.config-path }}')
+          print('true' if is_active_deploy_platform(cfg) else 'false')
+          ")
+          echo "is_active=$IS_ACTIVE" >> "$GITHUB_OUTPUT"
+
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          if [ -z "$AGENT_INFO" ]; then
+            echo "is_agent=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_agent=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch Fly destroy
+        if: steps.check.outputs.is_active == 'true' && steps.check.outputs.is_agent == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: '_deploy-fly.yml',
+              ref: 'main',
+              inputs: {
+                action: 'destroy',
+                pr_number: '${{ github.event.pull_request.number }}',
+                'config-path': '${{ inputs.config-path }}',
+              }
+            });
 
   # -----------------------------------------------------------------------
   # Deploy failure — dispatch repair for Vercel/deploy failures
