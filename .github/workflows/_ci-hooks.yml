@@ -262,7 +262,8 @@ jobs:
           ")
 
           APP_NAME="${APP_PREFIX}-${PR_NUM}"
-          IMAGE="ghcr.io/${{ github.repository }}:pr-${PR_NUM}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${REPO_LOWER}:pr-${PR_NUM}"
 
           echo "Building and pushing image ${IMAGE}..."
 
