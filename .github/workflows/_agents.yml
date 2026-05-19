@@ -18,6 +18,19 @@ on:
       agent:
         description: "Agent harness to run (codex, openhands)"
         required: true
+    secrets:
+      LBM_APP_ID:
+        required: false
+      LBM_APP_PRIVATE_KEY:
+        required: false
+      PAT_TOKEN:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      GEMINI_API_KEY:
+        required: false
         type: string
 
 

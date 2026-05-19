@@ -16,7 +16,13 @@ permissions:
 jobs:
   run:
     uses: {{ lbm_repo }}/.github/workflows/_agents.yml@{{ lbm_ref }}
-    secrets: inherit
+    secrets:
+      LBM_APP_ID: ${{ '{{' }} secrets.LBM_APP_ID {{ '}}' }}
+      LBM_APP_PRIVATE_KEY: ${{ '{{' }} secrets.LBM_APP_PRIVATE_KEY {{ '}}' }}
+      PAT_TOKEN: ${{ '{{' }} secrets.PAT_TOKEN {{ '}}' }}
+      ANTHROPIC_API_KEY: ${{ '{{' }} secrets.ANTHROPIC_API_KEY {{ '}}' }}
+      OPENAI_API_KEY: ${{ '{{' }} secrets.OPENAI_API_KEY {{ '}}' }}
+      GEMINI_API_KEY: ${{ '{{' }} secrets.GEMINI_API_KEY {{ '}}' }}
     with:
       config-path: lbm.toml
       issue_number: ${{ '{{' }} inputs.issue_number {{ '}}' }}
