@@ -54,7 +54,13 @@ def cli():
 @cli.command()
 @click.option("--lbm-repo", default="henryre/lbm-poc", help="Central lbm repo")
 @click.option("--lbm-ref", default="v1", help="Version ref to pin")
-@click.option("--from-json", "json_file", type=click.File("r"), default=None, help="Read config from JSON file instead of prompting")
+@click.option(
+    "--from-json",
+    "json_file",
+    type=click.File("r"),
+    default=None,
+    help="Read config from JSON file instead of prompting",
+)
 def init(lbm_repo, lbm_ref, json_file):
     """Initialize lbm in the current repository."""
     click.echo("LBM Setup\n")
@@ -80,7 +86,9 @@ def init(lbm_repo, lbm_ref, json_file):
         app_prefix = ""
         deploy_region = "iad"
         if deploy_platform in ("fly", "railway"):
-            app_prefix = click.prompt("App prefix (preview URLs will be {prefix}-{pr_number}.fly.dev)", default="app-pr")
+            app_prefix = click.prompt(
+                "App prefix (preview URLs will be {prefix}-{pr_number}.fly.dev)", default="app-pr"
+            )
             deploy_region = click.prompt("Deploy region", default="iad")
         database_orm = click.prompt("Database ORM", type=click.Choice(["prisma", "drizzle", "none"]), default="none")
 
