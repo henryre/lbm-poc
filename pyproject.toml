@@ -25,6 +25,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["cli", "scripts"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"cli/templates" = "cli/templates"
+
 [tool.ruff]
 line-length = 120
 

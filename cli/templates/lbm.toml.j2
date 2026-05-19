@@ -19,8 +19,8 @@ build = "{{ build_cmd }}"
 {% endif %}
 
 [checks]
-required = ["CI"]
-repair_from = ["CI"]
+required = {{ required_checks }}
+repair_from = {{ required_checks }}
 max_repair_attempts = 10
 max_ralph_loops = 0
 
@@ -33,14 +33,6 @@ preview_env = "Preview"
 app_prefix = "{{ app_prefix }}"
 region = "{{ deploy_region }}"
 registry = "ghcr"
-{% endif %}
-
-{% if database_orm != "none" %}
-[database]
-orm = "{{ database_orm }}"
-{% if database_orm == "prisma" %}
-validate = "npx prisma validate"
-{% endif %}
 {% endif %}
 
 [llm]

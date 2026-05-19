@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 from jinja2 import Environment, FileSystemLoader
 
-TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
+TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 # Default agent configs per harness
 DEFAULT_AGENTS = {
@@ -38,12 +38,6 @@ RUNTIME_DEFAULTS = {
     "custom": {"install": "", "lint": "", "typecheck": "", "build": ""},
 }
 
-LLM_DEFAULTS = {
-    "portkey": {"summary_model": "@bedrock/global.anthropic.claude-sonnet-4-6"},
-    "anthropic": {"summary_model": "claude-sonnet-4-6"},
-    "openai": {"summary_model": "gpt-4o"},
-}
-
 
 @click.group()
 def cli():
@@ -72,8 +66,6 @@ def init(lbm_repo, lbm_ref, json_file):
         deploy_platform = config.get("deploy_platform", "none")
         app_prefix = config.get("app_prefix", "")
         deploy_region = config.get("deploy_region", "iad")
-        database_orm = config.get("database_orm", "none")
-        llm_provider = config.get("llm_provider", "anthropic")
         required_checks = config.get("required_checks", ["CI"])
         available_agents = list(DEFAULT_AGENTS.keys())
         selected_agents = [a.strip() for a in agents_list if a.strip() in available_agents]
@@ -90,16 +82,12 @@ def init(lbm_repo, lbm_ref, json_file):
                 "App prefix (preview URLs will be {prefix}-{pr_number}.fly.dev)", default="app-pr"
             )
             deploy_region = click.prompt("Deploy region", default="iad")
-        database_orm = click.prompt("Database ORM", type=click.Choice(["prisma", "drizzle", "none"]), default="none")
 
         available_agents = list(DEFAULT_AGENTS.keys())
         click.echo(f"\nAvailable agents: {', '.join(available_agents)}")
         agent_choices = click.prompt("Which agents? (comma-separated)", default="claude,codex")
         selected_agents = [a.strip() for a in agent_choices.split(",") if a.strip() in available_agents]
 
-        llm_provider = click.prompt(
-            "LLM provider (for PR summaries)", type=click.Choice(["portkey", "anthropic", "openai"]), default="portkey"
-        )
         ci_name = click.prompt("CI workflow name (for pass/fail checks)", default="CI")
         required_checks = [ci_name]
 
@@ -119,9 +107,8 @@ def init(lbm_repo, lbm_ref, json_file):
         "deploy_platform": deploy_platform,
         "app_prefix": app_prefix,
         "deploy_region": deploy_region,
-        "database_orm": database_orm,
-        "llm_provider": llm_provider,
-        "summary_model": LLM_DEFAULTS.get(llm_provider, LLM_DEFAULTS["portkey"])["summary_model"],
+        "llm_provider": "anthropic",
+        "summary_model": "claude-sonnet-4-6",
         "harnesses": harnesses,
         "agents": agents,
         "guidance_file": "AGENTS.md",
@@ -171,8 +158,6 @@ def init(lbm_repo, lbm_ref, json_file):
         click.echo("  FLY_API_TOKEN (Fly.io API token)")
     elif deploy_platform == "railway":
         click.echo("  RAILWAY_TOKEN (Railway API token)")
-    if llm_provider == "portkey":
-        click.echo("  PORTKEY_API_KEY (for PR summaries)")
     click.echo("\nCustomize AGENTS.md with your codebase-specific guidance.")
     click.echo("Create an issue, add the 'ready-for-dev' label, and agents will start.")
 
