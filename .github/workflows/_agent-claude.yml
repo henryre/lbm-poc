@@ -245,7 +245,7 @@ jobs:
       - name: Commit and push if Claude didn't
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
         run: |
           BRANCH_PREFIX="${{ steps.config.outputs.branch_prefix }}"
           # Remove trailing slash for prefix matching
@@ -293,7 +293,7 @@ jobs:
       - name: Create PR and post result
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
