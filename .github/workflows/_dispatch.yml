@@ -152,22 +152,58 @@ jobs:
             gh issue comment "$ISSUE_NUM" --body "$BODY"
           fi
 
-      - name: Post status table
+      - name: Generate aliases and post status table
         if: steps.config.outputs.skip == 'false'
+        id: aliases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
 
-          STATUS=$(python3 -c "
+          # Check if aliases already exist (lock: don't regenerate on retag)
+          EXISTING=$(python3 -c "
           import sys
           sys.path.insert(0, '.lbm/scripts')
-          from config_parser import load_config, get_agents
-          cfg = load_config('${{ inputs.config-path }}')
-          agents = get_agents(cfg)
-          for a in agents:
-              print(f'| {a[\"name\"]} | ⏳ Running... |  |  |  |')
+          from agent_ops import read_alias_mapping
+          import json
+          m = read_alias_mapping('$ISSUE_NUM')
+          print(json.dumps(m) if m else '')
+          ")
+
+          if [ -n "$EXISTING" ]; then
+            echo "Aliases already locked for issue #$ISSUE_NUM"
+            ALIAS_JSON="$EXISTING"
+          else
+            # Generate new aliases
+            ALIAS_JSON=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from agent_ops import load_agents, generate_aliases
+          import json
+          agents = load_agents()
+          mapping = generate_aliases(agents)
+          print(json.dumps(mapping))
+          ")
+          fi
+
+          # Encode for embedding
+          ENCODED=$(python3 -c "
+          import sys, json
+          sys.path.insert(0, '.lbm/scripts')
+          from agent_ops import encode_alias_mapping
+          mapping = json.loads('$ALIAS_JSON')
+          print(encode_alias_mapping(mapping))
+          ")
+
+          # Build status table rows using aliases
+          STATUS=$(python3 -c "
+          import sys, json
+          sys.path.insert(0, '.lbm/scripts')
+          mapping = json.loads('$ALIAS_JSON')
+          for alias in mapping:
+              print(f'| {alias} | ⏳ Running... |  |  |  |')
           ")
 
           gh issue comment "$ISSUE_NUM" --body "## Agent Implementations
@@ -177,7 +213,8 @@ jobs:
           ${STATUS}
 
           ---
-          *Agents are working on this issue. This comment will be updated as each completes.*"
+          *Agents are working on this issue. This comment will be updated as each completes.*
+          <!-- lbm:aliases:${ENCODED} -->"
 
       - name: Dispatch agents
         if: steps.config.outputs.skip == 'false'

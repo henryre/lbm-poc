@@ -146,6 +146,7 @@ jobs:
       - name: Merge pending PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
         run: |
           BRANCH="${{ github.event.workflow_run.head_branch }}"
@@ -162,7 +163,27 @@ jobs:
 
           PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null || echo "")
           ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' || echo "")
-          AGENT_NAME=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" name 2>/dev/null || echo "Agent")
+
+          # Resolve display name: alias if available, else legacy agent name
+          AGENT_LABEL=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" label 2>/dev/null || echo "")
+          AGENT_NAME=$(python3 -c "
+          import sys, os
+          sys.path.insert(0, '.lbm/scripts')
+          from agent_ops import read_alias_mapping, reverse_alias_mapping
+          issue = '$ISSUE_NUM'
+          label = '$AGENT_LABEL'
+          if issue and label:
+              mapping = read_alias_mapping(issue)
+              if mapping:
+                  rev = reverse_alias_mapping(mapping)
+                  name = rev.get(label)
+                  if name:
+                      print(name)
+                      sys.exit(0)
+          " 2>/dev/null || echo "")
+          if [ -z "$AGENT_NAME" ]; then
+            AGENT_NAME=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" name 2>/dev/null || echo "Agent")
+          fi
 
           gh pr edit "$PR_NUM" --remove-label "merge-pending" || true
           gh pr ready "$PR_NUM" || true
@@ -568,6 +589,7 @@ jobs:
       - name: Find PR and post preview + summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}
@@ -595,8 +617,7 @@ jobs:
             exit 0
           fi
 
-          AGENT=$(echo "$AGENT_INFO" | grep "^name=" | cut -d= -f2)
-          echo "Branch $BRANCH -> $AGENT (PR #$PR_NUM)"
+          AGENT_LABEL=$(echo "$AGENT_INFO" | grep "^label=" | cut -d= -f2)
 
           # Extract issue number from PR body
           ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' || echo "")
@@ -604,6 +625,24 @@ jobs:
             echo "No linked issue found"
             exit 0
           fi
+
+          # Resolve alias for display name
+          AGENT=$(python3 -c "
+          import sys
+          sys.path.insert(0, '.lbm/scripts')
+          from agent_ops import read_alias_mapping, reverse_alias_mapping
+          mapping = read_alias_mapping('$ISSUE_NUM')
+          if mapping:
+              rev = reverse_alias_mapping(mapping)
+              name = rev.get('$AGENT_LABEL')
+              if name:
+                  print(name)
+                  sys.exit(0)
+          " 2>/dev/null || echo "")
+          if [ -z "$AGENT" ]; then
+            AGENT=$(echo "$AGENT_INFO" | grep "^name=" | cut -d= -f2)
+          fi
+          echo "Branch $BRANCH -> $AGENT (PR #$PR_NUM)"
 
           # Generate summary
           echo "Generating summary for PR #$PR_NUM..."

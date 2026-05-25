@@ -30,6 +30,9 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib
 
+import base64
+import random
+
 from models import AgentConfig, ChecksConfig, LBMConfig, LLMConfig
 
 CONFIG_PATH = os.environ.get(
@@ -102,6 +105,94 @@ def name_to_agent(agents: list[AgentConfig], name: str) -> AgentConfig | None:
         if a.name.upper() == name:
             return a
     return None
+
+
+# ---------------------------------------------------------------------------
+# Agent aliases
+# ---------------------------------------------------------------------------
+
+ALIAS_ADJECTIVES = [
+    "Swift", "Bold", "Keen", "Bright", "Calm", "Deft", "Wise", "Brave",
+    "Quick", "Sharp", "Sly", "Warm", "Wild", "Pale", "Rare", "True",
+    "Pure", "Firm", "Neat", "Still",
+]
+
+ALIAS_ANIMALS = [
+    "Falcon", "Otter", "Panda", "Fox", "Dolphin", "Owl", "Wolf", "Lynx",
+    "Raven", "Cobra", "Heron", "Badger", "Crane", "Viper", "Elk", "Finch",
+    "Hawk", "Bear", "Wren", "Frog",
+]
+
+ALIAS_MARKER = "<!-- lbm:aliases:"
+
+
+def generate_aliases(agents: list[AgentConfig]) -> dict[str, str]:
+    """Generate random adjective+animal aliases for agents.
+
+    Returns {alias: agent.label} mapping.
+    """
+    combos = [(adj, ani) for adj in ALIAS_ADJECTIVES for ani in ALIAS_ANIMALS]
+    selected = random.sample(combos, min(len(agents), len(combos)))
+    return {f"{adj} {ani}": agent.label for (adj, ani), agent in zip(selected, agents)}
+
+
+def alias_to_agent(agents: list[AgentConfig], alias: str, mapping: dict[str, str]) -> AgentConfig | None:
+    """Look up an alias in the mapping dict, then find the matching agent."""
+    agent_label = mapping.get(alias)
+    if not agent_label:
+        return None
+    return label_to_agent(agents, agent_label)
+
+
+def encode_alias_mapping(mapping: dict[str, str]) -> str:
+    """Encode alias mapping as b64 string for embedding in a comment."""
+    return base64.b64encode(json.dumps(mapping).encode()).decode()
+
+
+def decode_alias_mapping(encoded: str) -> dict[str, str]:
+    """Decode a b64-encoded alias mapping."""
+    return json.loads(base64.b64decode(encoded).decode())
+
+
+def read_alias_mapping(issue_num: str) -> dict[str, str] | None:
+    """Read alias mapping from the status comment on an issue.
+
+    Returns the decoded mapping or None if not found.
+    """
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        return None
+
+    raw = gh("api", f"repos/{repo}/issues/{issue_num}/comments", "--jq", ".", check=False)
+    if not raw or raw == "null":
+        return None
+
+    try:
+        comments = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    for c in comments:
+        body = c.get("body", "")
+        idx = body.find(ALIAS_MARKER)
+        if idx == -1:
+            continue
+        start = idx + len(ALIAS_MARKER)
+        end = body.find(" -->", start)
+        if end == -1:
+            continue
+        encoded = body[start:end].strip()
+        try:
+            return decode_alias_mapping(encoded)
+        except (json.JSONDecodeError, Exception):
+            continue
+
+    return None
+
+
+def reverse_alias_mapping(mapping: dict[str, str]) -> dict[str, str]:
+    """Return {agent_label: alias} from an {alias: agent_label} mapping."""
+    return {v: k for k, v in mapping.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +334,7 @@ def check_all_done(body: str) -> str:
     if "Pending" not in body and "Running" not in body:
         return body.replace(
             "*Agents are working on this issue. This comment will be updated as each completes.*",
-            "*All agents have completed. Review the PRs and use `/merge agent X` to select the best one.*",
+            "*All agents have completed. Review the PRs and use `/merge <alias>` to select the best one.*",
         )
     return body
 
@@ -460,7 +551,14 @@ def cmd_post_agent_result(args: list[str]) -> None:
 
     agents = load_agents()
     agent = label_to_agent(agents, agent_label)
-    agent_name = agent.name if agent else "Agent"
+
+    # Resolve display name via alias mapping
+    mapping = read_alias_mapping(issue_num)
+    if mapping:
+        reverse = reverse_alias_mapping(mapping)
+        agent_name = reverse.get(agent_label, agent.name if agent else "Agent")
+    else:
+        agent_name = agent.name if agent else "Agent"
 
     if not pr_num:
         cmd_update_status([issue_num, agent_label, "no-changes", "", "", run_url])
@@ -687,8 +785,6 @@ def cmd_update_status(args: list[str]) -> None:
         print(f"Unknown agent label: {agent_label}", file=sys.stderr)
         sys.exit(1)
 
-    agent_name = agent.name
-
     comments_json = gh(
         "api",
         f"repos/{repo}/issues/{issue_num}/comments",
@@ -704,6 +800,14 @@ def cmd_update_status(args: list[str]) -> None:
     comment = json.loads(comments_json)
     comment_id = comment["id"]
     body = comment["body"]
+
+    # Determine display name: use alias if mapping exists, fall back to agent.name
+    mapping = read_alias_mapping(issue_num)
+    if mapping:
+        reverse = reverse_alias_mapping(mapping)
+        agent_name = reverse.get(agent.label, agent.name)
+    else:
+        agent_name = agent.name
 
     new_body = update_status_row(body, agent_name, status, pr_number, preview_url, run_url)
     new_body = check_all_done(new_body)
@@ -802,6 +906,59 @@ def cmd_summarize_pr(args: list[str]) -> None:
     print(summary)
 
 
+def cmd_aliases(args: list[str]) -> None:
+    """Alias operations. Usage: aliases <subcommand> [args...]
+
+    Subcommands:
+      generate               — Generate aliases for all configured agents (JSON output)
+      resolve <issue> <text> — Resolve an alias from issue mapping to agent label
+      read <issue>           — Read existing alias mapping from issue (JSON output)
+    """
+    if len(args) < 1:
+        print("Usage: aliases <generate|resolve|read> [args...]", file=sys.stderr)
+        sys.exit(1)
+
+    subcmd = args[0]
+
+    if subcmd == "generate":
+        agents = load_agents()
+        mapping = generate_aliases(agents)
+        print(json.dumps(mapping))
+
+    elif subcmd == "resolve":
+        if len(args) < 3:
+            print("Usage: aliases resolve <issue_number> <alias text>", file=sys.stderr)
+            sys.exit(1)
+        issue_num = args[1]
+        alias_text = " ".join(args[2:])
+        mapping = read_alias_mapping(issue_num)
+        if not mapping:
+            print(f"No alias mapping found on issue #{issue_num}", file=sys.stderr)
+            sys.exit(1)
+        agents = load_agents()
+        agent = alias_to_agent(agents, alias_text, mapping)
+        if agent:
+            print(agent.label)
+        else:
+            print(f"Unknown alias: {alias_text}", file=sys.stderr)
+            sys.exit(1)
+
+    elif subcmd == "read":
+        if len(args) < 2:
+            print("Usage: aliases read <issue_number>", file=sys.stderr)
+            sys.exit(1)
+        issue_num = args[1]
+        mapping = read_alias_mapping(issue_num)
+        if mapping:
+            print(json.dumps(mapping))
+        else:
+            print("{}")
+
+    else:
+        print(f"Unknown aliases subcommand: {subcmd}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_diagnostics(args: list[str]) -> None:
     """Print post-agent diagnostic info: git state, resolver output, branches."""
     agent_label = args[0] if args else ""
@@ -882,6 +1039,7 @@ COMMANDS = {
     "dispatch-repair": cmd_dispatch_repair,
     "update-status": cmd_update_status,
     "summarize-pr": cmd_summarize_pr,
+    "aliases": cmd_aliases,
     "diagnostics": cmd_diagnostics,
     "generate-config": cmd_generate_config,
 }
