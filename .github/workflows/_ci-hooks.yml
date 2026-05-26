@@ -520,35 +520,105 @@ jobs:
           print(get_deploy_platform(cfg))
           ")
 
-          # Fetch deploy logs (Vercel-specific)
+          # Fetch deploy logs (Vercel-specific). LOGS_AVAILABLE distinguishes
+          # "we have real build output" from "we only have a URL" — the prompt
+          # we send to the agent must not pretend the latter is the former.
           LOG_URL="${{ github.event.deployment_status.log_url }}"
           TARGET_URL="${{ github.event.deployment_status.target_url }}"
           DEPLOY_LOGS=""
+          LOGS_AVAILABLE=false
+          LOGS_REASON=""
 
-          if [ "$DEPLOY_PLATFORM" = "vercel" ] && [ -n "$VERCEL_TOKEN" ]; then
-            DEPLOY_HOST="${{ github.event.deployment_status.environment_url }}"
-            DEPLOY_HOST="${DEPLOY_HOST#https://}"
-            if [ -n "$DEPLOY_HOST" ]; then
-              DPL_UID=$(curl -sf "https://api.vercel.com/v13/deployments/get?url=${DEPLOY_HOST}" \
-                -H "Authorization: Bearer $VERCEL_TOKEN" \
-                | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
-              if [ -n "$DPL_UID" ]; then
-                echo "Fetching logs for deployment $DPL_UID..."
-                DEPLOY_LOGS=$(npx --yes vercel inspect "$DPL_UID" --logs --token="$VERCEL_TOKEN" 2>&1 | tail -50 || echo "")
+          if [ "$DEPLOY_PLATFORM" = "vercel" ]; then
+            if [ -z "$VERCEL_TOKEN" ]; then
+              LOGS_REASON="VERCEL_TOKEN secret is not configured on this repository, so build logs cannot be fetched from the Vercel API."
+            else
+              DEPLOY_HOST="${{ github.event.deployment_status.environment_url }}"
+              DEPLOY_HOST="${DEPLOY_HOST#https://}"
+              if [ -n "$DEPLOY_HOST" ]; then
+                DPL_UID=$(curl -sf "https://api.vercel.com/v13/deployments/get?url=${DEPLOY_HOST}" \
+                  -H "Authorization: Bearer $VERCEL_TOKEN" \
+                  | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+                if [ -n "$DPL_UID" ]; then
+                  echo "Fetching logs for deployment $DPL_UID..."
+                  DEPLOY_LOGS=$(npx --yes vercel inspect "$DPL_UID" --logs --token="$VERCEL_TOKEN" 2>&1 | tail -100 || echo "")
+                  if [ -n "$DEPLOY_LOGS" ]; then
+                    LOGS_AVAILABLE=true
+                  else
+                    LOGS_REASON="Vercel CLI returned no log output for deployment $DPL_UID."
+                  fi
+                else
+                  LOGS_REASON="Could not resolve deployment ID for host $DEPLOY_HOST via the Vercel API."
+                fi
+              else
+                LOGS_REASON="No environment_url on the deployment_status event."
               fi
             fi
+          else
+            LOGS_REASON="Deploy platform '$DEPLOY_PLATFORM' has no log fetcher wired up."
           fi
 
-          if [ -z "$DEPLOY_LOGS" ]; then
-            DEPLOY_LOGS="Deployment failed. Logs: ${LOG_URL:-$TARGET_URL}"
+          # If we have logs, scan for missing-env-var signatures so the prompt
+          # can name the offender directly instead of hinting generically.
+          MISSING_ENV_VARS=""
+          if [ "$LOGS_AVAILABLE" = "true" ]; then
+            MISSING_ENV_VARS=$(python3 - "$DEPLOY_LOGS" <<'PYEOF'
+          import re, sys
+          logs = sys.argv[1]
+          patterns = [
+              r'Environment Variable "([A-Z_][A-Z0-9_]+)" references Secret',
+              r'Invalid environment variables:\s*\{\s*([A-Z_][A-Z0-9_]+)',
+              r'process\.env\.([A-Z_][A-Z0-9_]+) is (?:required|undefined|not defined)',
+              r'Missing (?:required )?environment variable[: ]+([A-Z_][A-Z0-9_]+)',
+              r'Missing ([A-Z_][A-Z0-9_]+) environment variable',
+              r'([A-Z_][A-Z0-9_]+) is required but (?:not set|undefined|missing)',
+              r'Missing CLERK_(SECRET|PUBLISHABLE)_KEY',
+          ]
+          found = []
+          for pat in patterns:
+              for m in re.finditer(pat, logs):
+                  name = m.group(1)
+                  if name in ("SECRET", "PUBLISHABLE"):
+                      name = f"CLERK_{name}_KEY"
+                  if name not in found:
+                      found.append(name)
+          # Clerk's "Missing publishable key" is its own signature
+          if "Missing publishable key" in logs and "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" not in found:
+              found.append("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
+          print(",".join(found))
+          PYEOF
+            )
           fi
 
-          python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "Deployment failed (CI passed but deploy did not). This is often caused by missing environment variables, client generation issues, or runtime errors during prerendering.
+          # Build the failure context. Three branches: (a) no logs, (b) logs +
+          # named missing env var, (c) logs but no env-var signature.
+          if [ "$LOGS_AVAILABLE" = "false" ]; then
+            REPAIR_CONTEXT="Deployment failed (CI passed but deploy did not), and build logs could not be fetched.
 
-          Deploy build logs:
+          Reason logs are unavailable: ${LOGS_REASON}
+
+          Failed deployment URL: ${LOG_URL:-$TARGET_URL}
+
+          Without logs there is no diagnostic evidence to act on. Do NOT guess at causes. Inspect the most recent commit's diff for changes that could plausibly affect the deploy build (new dependencies, new server-side imports, new database/auth wiring, build script changes), and report what you see — only push a fix if there is concrete evidence in the diff. Otherwise comment on the PR explaining that diagnosis requires deploy logs."
+          elif [ -n "$MISSING_ENV_VARS" ]; then
+            REPAIR_CONTEXT="Deployment failed because the following environment variable(s) are not configured on the deploy platform: ${MISSING_ENV_VARS}.
+
+          This is most likely a deploy-platform configuration issue, not a code issue — the variable needs to be set in the Vercel project (Settings → Environment Variables). Only change code if the variable should not have been required (e.g., add a runtime-time guard for placeholder/missing values).
+
+          Build logs (last 100 lines):
           \`\`\`
           ${DEPLOY_LOGS}
           \`\`\`"
+          else
+            REPAIR_CONTEXT="Deployment failed (CI passed but deploy did not). Diagnose from the build logs below — do not guess.
+
+          Build logs (last 100 lines):
+          \`\`\`
+          ${DEPLOY_LOGS}
+          \`\`\`"
+          fi
+
+          python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "$REPAIR_CONTEXT"
 
   # -----------------------------------------------------------------------
   # Post preview link + summary on successful deploy
