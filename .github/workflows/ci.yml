@@ -28,3 +28,26 @@ jobs:
 
       - name: Run tests
         run: uv run pytest test/ -v
+
+  ts-equivalence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      # Creates .venv with click + jinja2 so the equivalence test can run the
+      # Python `lbm init` route and diff it against the TS route.
+      - name: Install Python deps
+        run: uv sync --all-extras
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Equivalence test (TS vs Python CLI)
+        run: npm test
+

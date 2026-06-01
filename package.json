@@ -1,0 +1,31 @@
+{
+  "name": "lbm-templates",
+  "version": "1.0.0",
+  "description": "TypeScript route for rendering LBM config + workflow files (kept byte-equivalent to the Python `lbm init` CLI via an equivalence test).",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "cli/templates",
+    "scripts/gen-templates.mjs",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "gen": "node scripts/gen-templates.mjs",
+    "build": "node scripts/gen-templates.mjs && tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}
