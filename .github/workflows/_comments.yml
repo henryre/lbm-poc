@@ -162,6 +162,73 @@ jobs:
           fi
 
   # -----------------------------------------------------------------------
+  # /no-winner command — close the iteration with no winning agent
+  # -----------------------------------------------------------------------
+  no-winner:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      startsWith(github.event.comment.body, '/no-winner')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: no-winner-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
+      - name: Acknowledge command
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content='+1' 2>/dev/null || true
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ env.LBM_TOKEN }}
+
+      - name: Record no-winner verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          # Parse optional reason after /no-winner (e.g. "/no-winner none passed CI")
+          REASON=$(python3 -c "
+          import re, os
+          comment = os.environ['COMMENT_BODY']
+          m = re.match(r'/no-winner\s*(.*)', comment.strip().split('\n')[0])
+          print(m.group(1).strip() if m else '')
+          ")
+
+          # Closes all agent PRs, posts the lbm:no-winner marker comment, labels the issue.
+          python3 .lbm/scripts/agent_ops.py record-no-winner "$ISSUE_NUM" "$REASON"
+
+          # Close the issue (the marker comment above is the durable record).
+          gh issue close "$ISSUE_NUM" || true
+
+  # -----------------------------------------------------------------------
   # /feedback command — parse feedback and post to agent's PR
   # -----------------------------------------------------------------------
   feedback:

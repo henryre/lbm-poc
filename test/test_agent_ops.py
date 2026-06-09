@@ -327,6 +327,74 @@ class TestClosingLosingPrs:
         assert mock_gh.call_count == 1
 
 
+class TestRecordNoWinner:
+    @patch("agent_ops.gh")
+    @patch("agent_ops.load_agents")
+    def test_closes_all_prs_and_marks_issue(self, mock_agents, mock_gh):
+        mock_agents.return_value = [
+            AgentConfig(
+                label="agent:claude",
+                branch_prefix="claude/",
+                name="Agent A",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
+        ]
+        # pr list -> "10", then close, comment, label create, issue edit
+        mock_gh.side_effect = ["10", "", "", "", ""]
+
+        agent_ops.cmd_record_no_winner(["42", "agents stalled"])
+
+        # The agent PR is closed (nothing excluded)
+        close_calls = [c for c in mock_gh.call_args_list if len(c[0]) > 1 and c[0][1] == "close"]
+        assert len(close_calls) == 1
+        assert close_calls[0][0][2] == "10"
+
+        # A marker comment carrying the reason is posted on the issue
+        comment_calls = [
+            c for c in mock_gh.call_args_list if c[0][0] == "issue" and c[0][1] == "comment"
+        ]
+        assert len(comment_calls) == 1
+        args = comment_calls[0][0]
+        body = args[args.index("--body") + 1]
+        assert agent_ops.NO_WINNER_MARKER in body
+        assert "agents stalled" in body
+
+        # The issue is labelled with the durable no-winner label
+        edit_calls = [
+            c for c in mock_gh.call_args_list if c[0][0] == "issue" and c[0][1] == "edit"
+        ]
+        assert any(agent_ops.NO_WINNER_LABEL in c[0] for c in edit_calls)
+
+    @patch("agent_ops.gh")
+    @patch("agent_ops.load_agents")
+    def test_no_prs_still_marks_issue(self, mock_agents, mock_gh):
+        mock_agents.return_value = [
+            AgentConfig(
+                label="agent:claude",
+                branch_prefix="claude/",
+                name="Agent A",
+                mention="@claude",
+                harness="claude",
+                model_id="claude-opus",
+                model_label="opus-4-6",
+            )
+        ]
+        # pr list -> "" (no PRs), then comment, label create, issue edit
+        mock_gh.side_effect = ["", "", "", ""]
+
+        agent_ops.cmd_record_no_winner(["42"])
+
+        close_calls = [c for c in mock_gh.call_args_list if len(c[0]) > 1 and c[0][1] == "close"]
+        assert len(close_calls) == 0
+        comment_calls = [
+            c for c in mock_gh.call_args_list if c[0][0] == "issue" and c[0][1] == "comment"
+        ]
+        assert len(comment_calls) == 1
+
+
 SAMPLE_AGENT_CODEX = AgentConfig(
     label="agent:codex",
     branch_prefix="codex/",

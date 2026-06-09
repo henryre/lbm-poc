@@ -12,6 +12,7 @@ Commands:
   close-previous-prs <issue> <prefix> <label>
   post-agent-result <issue> <label> [pr] [run_url]
   close-losing-prs <issue> <winner_pr> [winner_name]
+  record-no-winner <issue> [reason]
   dispatch-repair <pr> <context>
   update-status <issue> <label> <status> [pr] [preview] [run]
   summarize-pr <pr_number>
@@ -589,17 +590,13 @@ def cmd_post_agent_result(args: list[str]) -> None:
     gh("issue", "comment", issue_num, "--body", body)
 
 
-def cmd_close_losing_prs(args: list[str]) -> None:
-    """Close all agent PRs for an issue except the winner."""
-    if len(args) < 2:
-        print("Usage: close-losing-prs <issue_number> <winner_pr> [winner_name]", file=sys.stderr)
-        sys.exit(1)
+def close_agent_prs(issue_num: str, comment: str, exclude_pr: str | None = None) -> list[str]:
+    """Close every agent PR for an issue, optionally excluding one.
 
-    issue_num = args[0]
-    winner_pr = args[1]
-    winner_name = args[2] if len(args) > 2 else "Agent"
-
+    Returns the list of closed PR numbers.
+    """
     agents = load_agents()
+    closed: list[str] = []
     for agent in agents:
         prefix = agent.branch_prefix
         jq_filter = (
@@ -619,17 +616,78 @@ def cmd_close_losing_prs(args: list[str]) -> None:
         )
         for line in output.splitlines():
             pr = line.strip()
-            if pr and pr != winner_pr:
+            if pr and pr != exclude_pr:
                 print(f"Closing PR #{pr}")
-                gh(
-                    "pr",
-                    "close",
-                    pr,
-                    "--comment",
-                    f"Closed: {winner_name} (PR #{winner_pr}) was selected.",
-                    "--delete-branch",
-                    check=False,
-                )
+                gh("pr", "close", pr, "--comment", comment, "--delete-branch", check=False)
+                closed.append(pr)
+    return closed
+
+
+def cmd_close_losing_prs(args: list[str]) -> None:
+    """Close all agent PRs for an issue except the winner."""
+    if len(args) < 2:
+        print("Usage: close-losing-prs <issue_number> <winner_pr> [winner_name]", file=sys.stderr)
+        sys.exit(1)
+
+    issue_num = args[0]
+    winner_pr = args[1]
+    winner_name = args[2] if len(args) > 2 else "Agent"
+
+    close_agent_prs(
+        issue_num,
+        f"Closed: {winner_name} (PR #{winner_pr}) was selected.",
+        exclude_pr=winner_pr,
+    )
+
+
+# ---------------------------------------------------------------------------
+# No-winner verdict
+# ---------------------------------------------------------------------------
+
+# Durable marker the LBM Hub keys off to distinguish an explicit "no winner"
+# verdict from an issue closed for any other reason.
+NO_WINNER_MARKER = "<!-- lbm:no-winner -->"
+NO_WINNER_LABEL = "outcome:no-winner"
+
+
+def cmd_record_no_winner(args: list[str]) -> None:
+    """Record an explicit 'no winner' verdict for an iteration.
+
+    Closes every agent PR, posts a machine-readable marker comment, and labels
+    the issue. The issue itself is closed by the calling workflow (mirroring how
+    the /merge job closes the issue after merging).
+
+    Usage: record-no-winner <issue_number> [reason]
+    """
+    if len(args) < 1:
+        print("Usage: record-no-winner <issue_number> [reason]", file=sys.stderr)
+        sys.exit(1)
+
+    issue_num = args[0]
+    reason = args[1].strip() if len(args) > 1 else ""
+
+    closed = close_agent_prs(issue_num, "Closed: no winner was selected for this iteration.")
+    print(f"Closed {len(closed)} agent PR(s)")
+
+    reason_text = f"\n\n> {reason}" if reason else ""
+    body = (
+        f"{NO_WINNER_MARKER}\n"
+        "**No winner** — no agent produced a mergeable implementation for this iteration."
+        f"{reason_text}"
+    )
+    gh("issue", "comment", issue_num, "--body", body, check=False)
+
+    gh(
+        "label",
+        "create",
+        NO_WINNER_LABEL,
+        "--color",
+        "6E738D",
+        "--description",
+        "Iteration closed with no winning agent",
+        check=False,
+    )
+    gh("issue", "edit", issue_num, "--add-label", NO_WINNER_LABEL, check=False)
 
 
 def cmd_dispatch_repair(args: list[str]) -> None:
@@ -1036,6 +1094,7 @@ COMMANDS = {
     "close-previous-prs": cmd_close_previous_prs,
     "post-agent-result": cmd_post_agent_result,
     "close-losing-prs": cmd_close_losing_prs,
+    "record-no-winner": cmd_record_no_winner,
     "dispatch-repair": cmd_dispatch_repair,
     "update-status": cmd_update_status,
     "summarize-pr": cmd_summarize_pr,
