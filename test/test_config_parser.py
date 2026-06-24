@@ -118,6 +118,31 @@ override_branch_prefix = "claude/"
         assert agents[0]["label"] == "agent:claude"
         assert agents[0]["branch_prefix"] == "claude/"
 
+    def test_claude_args_defaults_empty(self, config):
+        # Agents without an explicit claude_args get an empty string.
+        agents = config_parser.get_agents(config)
+        assert agents[0]["claude_args"] == ""
+
+    def test_claude_args_passthrough(self):
+        # Optional freeform args in an [[agents]] entry are surfaced verbatim so the
+        # workflow can forward them to claude-code-action without an lbm-poc change.
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
+        toml = """
+[harnesses.claude]
+mention = "@claude"
+[[agents]]
+harness = "claude"
+model_id = "claude-opus-4-8"
+model_label = "opus-4-8"
+claude_args = "--max-thinking-tokens 0"
+"""
+        config = tomllib.loads(toml)
+        agents = config_parser.get_agents(config)
+        assert agents[0]["claude_args"] == "--max-thinking-tokens 0"
+
 
 class TestGetCheckNames:
     def test_returns_required(self, config):

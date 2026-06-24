@@ -102,6 +102,9 @@ jobs:
               f.write(f'branch_prefix={claude_agent[\"branch_prefix\"]}\n')
               f.write(f'agent_label={claude_agent[\"label\"]}\n')
               f.write(f'allowed_tools={tools_str}\n')
+              # Optional freeform args from the agent's lbm.toml entry, appended verbatim
+              # to the action's claude_args (e.g. model/API-specific CLI flags).
+              f.write(f'extra_claude_args={claude_agent.get(\"claude_args\", \"\")}\n')
               llm_provider = cfg.get('llm', {}).get('provider', 'anthropic')
               f.write(f'llm_provider={llm_provider}\n')
           " || { echo "::error::Config parse failed"; exit 1; }
@@ -153,7 +156,7 @@ jobs:
         if: steps.trigger.outputs.skip == 'false' && steps.config.outputs.llm_provider != 'portkey'
         id: claude1_direct
         continue-on-error: true
-        uses: anthropics/claude-code-action@58dbe8ed6879f0d3b02ac295b20d5fdfe7733e0c
+        uses: anthropics/claude-code-action@80bb8413fb10e8dcfd4dd50841e8b2699fd71034
         env:
           ANTHROPIC_MODEL: ${{ steps.config.outputs.model_id }}
         with:
@@ -161,14 +164,14 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
 
       # Claude Code (attempt 1) — Portkey gateway
       - name: Run Claude Code (attempt 1)
         if: steps.trigger.outputs.skip == 'false' && steps.config.outputs.llm_provider == 'portkey'
         id: claude1_portkey
         continue-on-error: true
-        uses: anthropics/claude-code-action@58dbe8ed6879f0d3b02ac295b20d5fdfe7733e0c
+        uses: anthropics/claude-code-action@80bb8413fb10e8dcfd4dd50841e8b2699fd71034
         env:
           ANTHROPIC_BASE_URL: "https://api.portkey.ai"
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.PORTKEY_API_KEY }}
@@ -179,7 +182,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
 
       - name: Wait before retry
         if: >-
@@ -195,7 +198,7 @@ jobs:
           steps.config.outputs.llm_provider != 'portkey'
         id: claude2_direct
         continue-on-error: true
-        uses: anthropics/claude-code-action@58dbe8ed6879f0d3b02ac295b20d5fdfe7733e0c
+        uses: anthropics/claude-code-action@80bb8413fb10e8dcfd4dd50841e8b2699fd71034
         env:
           ANTHROPIC_MODEL: ${{ steps.config.outputs.model_id }}
         with:
@@ -203,7 +206,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
 
       # Claude Code (attempt 2) — Portkey gateway
       - name: Run Claude Code (attempt 2)
@@ -213,7 +216,7 @@ jobs:
           steps.config.outputs.llm_provider == 'portkey'
         id: claude2_portkey
         continue-on-error: true
-        uses: anthropics/claude-code-action@58dbe8ed6879f0d3b02ac295b20d5fdfe7733e0c
+        uses: anthropics/claude-code-action@80bb8413fb10e8dcfd4dd50841e8b2699fd71034
         env:
           ANTHROPIC_BASE_URL: "https://api.portkey.ai"
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.PORTKEY_API_KEY }}
@@ -224,7 +227,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
 
       - name: Agent diagnostics
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'

@@ -12,14 +12,14 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 DEFAULT_AGENTS = {
     "claude": {
         "harness": "claude",
-        "model_id": "claude-opus-4-6",
-        "model_label": "opus-4-6",
+        "model_id": "claude-opus-4-8",
+        "model_label": "opus-4-8",
         "mention": "@claude",
     },
     "codex": {
         "harness": "codex",
-        "model_id": "gpt-5.3-codex",
-        "model_label": "gpt-5.3",
+        "model_id": "gpt-5.5",
+        "model_label": "gpt-5.5",
         "mention": "@codex",
     },
     "openhands": {

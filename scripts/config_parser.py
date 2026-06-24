@@ -216,6 +216,10 @@ def get_agents(config: dict) -> list[dict]:
                 "branch_prefix": branch_prefix,
                 "name": name,
                 "mention": harnesses[harness].get("mention", ""),
+                # Optional freeform args appended verbatim to the harness CLI invocation
+                # (e.g. claude_args -> claude-code-action `claude_args`). Lets a repo pass
+                # model/API-specific flags from lbm.toml without an lbm-poc code change.
+                "claude_args": entry.get("claude_args", ""),
             }
         )
 

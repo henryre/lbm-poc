@@ -23,8 +23,8 @@ export interface RenderedFile {
 
 // Mirror of DEFAULT_AGENTS in cli/main.py.
 const DEFAULT_AGENTS: Record<string, { harness: string; model_id: string; model_label: string; mention: string }> = {
-  claude: { harness: "claude", model_id: "claude-opus-4-6", model_label: "opus-4-6", mention: "@claude" },
-  codex: { harness: "codex", model_id: "gpt-5.3-codex", model_label: "gpt-5.3", mention: "@codex" },
+  claude: { harness: "claude", model_id: "claude-opus-4-8", model_label: "opus-4-8", mention: "@claude" },
+  codex: { harness: "codex", model_id: "gpt-5.5", model_label: "gpt-5.5", mention: "@codex" },
   openhands: {
     harness: "openhands",
     model_id: "gemini/gemini-3.1-pro-preview",

@@ -406,12 +406,15 @@ jobs:
           python3 -c "
           import sys
           sys.path.insert(0, '.lbm/scripts')
-          from config_parser import load_config, get_build_commands
+          from config_parser import load_config, get_build_commands, get_agents
           cfg = load_config('${{ inputs.config-path }}')
           build = get_build_commands(cfg)
+          codex_agent = next((a for a in get_agents(cfg) if a['harness'] == 'codex'), None)
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'runtime={build[\"runtime\"]}\n')
               f.write(f'install={build[\"install\"]}\n')
+              if codex_agent:
+                  f.write(f'model_id={codex_agent[\"model_id\"]}\n')
           "
 
       - uses: actions/setup-node@v4
@@ -463,6 +466,7 @@ jobs:
         with:
           prompt: ${{ steps.prompt.outputs.prompt }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ steps.config.outputs.model_id }}
           allow-bot-users: "lbm-bot"
 
       - name: Commit and push

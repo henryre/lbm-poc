@@ -104,6 +104,7 @@ jobs:
               f.write(f'branch_prefix={codex_agent[\"branch_prefix\"]}\n')
               f.write(f'agent_label={codex_agent[\"label\"]}\n')
               f.write(f'guidance_file={guidance}\n')
+              f.write(f'model_id={codex_agent[\"model_id\"]}\n')
           "
 
       # Runtime setup
@@ -163,6 +164,7 @@ jobs:
         with:
           prompt: ${{ steps.prompt.outputs.prompt }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ steps.config.outputs.model_id }}
           allow-bot-users: "lbm-bot"
 
       - name: Wait before retry
@@ -177,6 +179,7 @@ jobs:
         with:
           prompt: ${{ steps.prompt.outputs.prompt }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ steps.config.outputs.model_id }}
           allow-bot-users: "lbm-bot"
 
       - name: Agent diagnostics

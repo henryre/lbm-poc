@@ -80,6 +80,22 @@ class TestAgentConfig:
         assert agent.branch_prefix == "claude-opus-4-6/"
         assert agent.name == "Agent A"
         assert agent.mention == "@claude"
+        # Optional; absent in this dict, so defaults to empty.
+        assert agent.claude_args == ""
+
+    def test_from_dict_carries_claude_args(self):
+        d = {
+            "label": "agent:claude",
+            "harness": "claude",
+            "model_id": "claude-opus-4-8",
+            "model_label": "opus-4-8",
+            "branch_prefix": "claude-opus-4-8/",
+            "name": "Agent A",
+            "mention": "@claude",
+            "claude_args": "--max-thinking-tokens 0",
+        }
+        agent = AgentConfig.from_dict(d)
+        assert agent.claude_args == "--max-thinking-tokens 0"
 
     def test_from_dict_is_frozen(self):
         d = {

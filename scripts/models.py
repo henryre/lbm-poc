@@ -22,6 +22,10 @@ class AgentConfig:
     branch_prefix: str
     name: str
     mention: str
+    # Optional freeform args appended verbatim to the harness CLI invocation
+    # (e.g. passed through to claude-code-action's `claude_args`). Lets a repo set
+    # model/API-specific flags in lbm.toml without an lbm-poc code change.
+    claude_args: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> AgentConfig:
@@ -33,6 +37,7 @@ class AgentConfig:
             branch_prefix=d["branch_prefix"],
             name=d["name"],
             mention=d["mention"],
+            claude_args=d.get("claude_args", ""),
         )
 
 
@@ -143,6 +148,7 @@ class LBMConfig:
                     branch_prefix=branch_prefix,
                     name=name,
                     mention=mention,
+                    claude_args=entry.get("claude_args", ""),
                 )
             )
 
