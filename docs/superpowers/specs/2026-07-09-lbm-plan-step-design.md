@@ -196,13 +196,31 @@ comment re-invoke. Detailed design in the plan's fast-follow section.
 - **E2E** on chess-rl: label an issue → verify Phase-1 plan PRs + `## Agent Plans` links
   → `/merge-plan <alias>` → plan merged + Phase-2 implement dispatch → `/merge`.
 
-## Open questions / notes
+## Resolved mechanisms (as built)
 
-- **Re-dispatch mechanism for Phase 2:** reuse `agent_ops.dispatch_agent` (used by
-  ralph restart) to trigger each harness with `phase=implement`; claude via the
-  `lbm-agents.yml` workflow_dispatch path (so both harnesses share one re-dispatch
-  route) rather than the wrapper's labeled-only claude job.
-- **Branch reuse:** Phase-2 agents may reuse their Phase-1 branch or open a fresh one;
-  default fresh implementation branch (keeps plan PR history intact). Decide in plan.
+The following were decided during implementation and supersede the open questions:
+
+- **Phase detection is label-based, not input-threaded.** `config_parser.resolve_phase(cfg, labels)`
+  returns `plan` iff `[plan].enabled` and the issue lacks `lbm:phase-implement`, else
+  `implement`. Every harness workflow resolves phase identically from durable issue
+  labels — no `phase` needs to be threaded through `workflow_dispatch`/`dispatch_agent`,
+  and there is no race with the triggering event.
+- **Claude gets plan instructions via `--append-system-prompt`** (appended to
+  `claude_args`), computed from the resolved phase. This is race-free because it keys
+  off labels rather than the webhook's issue-body snapshot (claude-code-action reads the
+  issue from the event payload). Codex gets them appended to its built prompt.
+- **Phase-2 re-dispatch = re-apply the ready label.** `/merge-plan` finalize adds
+  `lbm:phase-implement`, then removes+re-adds the ready label. That re-fires
+  `issues.labeled`, which re-runs both the claude wrapper (via `label_trigger`) and the
+  router (which dispatches codex/openhands) — all now in the implement phase. This
+  reuses existing triggers instead of inventing a claude `workflow_dispatch` route.
+- **Status tables** reuse one 5-column helper with a configurable 4th-column label
+  ("Plan" vs "Preview"); the router posts the phase-appropriate table idempotently.
+- **Branch reuse:** Phase-2 opens a fresh implementation branch (plan branches are
+  deleted on merge/close); `git push --force` covers any name reuse.
 - **v1 retag** affects all `@v1` consumers; plan step is gated by `[plan].enabled`
   (default off) so other repos are unaffected.
+- **Known limitation (fast-follow):** the OpenHands harness reads the issue via its
+  resolver and does not yet receive plan-phase instructions, so `[plan].enabled` + an
+  OpenHands agent is not fully supported. chess-rl uses claude + codex only; other
+  consumers keep `enabled=false`.
