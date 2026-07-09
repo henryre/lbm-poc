@@ -648,3 +648,75 @@ jobs:
             git commit -m "fix: apply repair from PR comment"
             git push
           fi
+
+  # -----------------------------------------------------------------------
+  # Repair-comment trigger — a comment containing a configured
+  # [checks].repair_comment_triggers marker dispatches a repair with the
+  # comment body as context. Reuses dispatch-repair (attempt cap / ralph / manual).
+  # -----------------------------------------------------------------------
+  repair-comment:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      !contains(github.event.comment.body, '[repair-attempt]') &&
+      (
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) ||
+        github.event.comment.user.type == 'Bot'
+      )
+    runs-on: ubuntu-latest
+    concurrency:
+      group: repair-comment-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ env.LBM_TOKEN }}
+
+      - name: Match trigger and dispatch repair
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_NUM: ${{ github.event.issue.number }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          CLEANED=$(python3 -c "
+          import os, sys
+          sys.path.insert(0, '.lbm/scripts')
+          import config_parser
+          cfg = config_parser.load_config(os.environ['LBM_CONFIG_PATH'])
+          triggers = config_parser.get_repair_comment_triggers(cfg)
+          body = os.environ['COMMENT_BODY']
+          if not config_parser.matches_repair_trigger(body, triggers):
+              print('__LBM_NO_TRIGGER__')
+          else:
+              print(config_parser.strip_repair_triggers(body, triggers))
+          ")
+          if [ "$CLEANED" = "__LBM_NO_TRIGGER__" ]; then
+            echo "No repair trigger in comment; skipping."
+            exit 0
+          fi
+          python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "$CLEANED"
