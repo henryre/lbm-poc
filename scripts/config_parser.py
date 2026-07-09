@@ -349,3 +349,34 @@ def get_preview_comment_marker(config: dict) -> str:
     preview link in the status table (empty = disabled)."""
     marker = config.get("checks", {}).get("preview_comment_marker", "")
     return marker if isinstance(marker, str) else ""
+
+
+def get_plan_config(config: dict) -> dict:
+    """Plan-step config (absent/empty = disabled -> today's single-phase flow)."""
+    p = config.get("plan", {})
+    return {
+        "enabled": bool(p.get("enabled", False)),
+        "dir": p.get("dir", "lbm-plans"),
+        "feedback_revs": int(p.get("feedback_revs", 1)),
+        "prototype": bool(p.get("prototype", False)),
+    }
+
+
+# LBM-managed label that flips an iteration from the plan phase to the
+# implement phase (applied by /merge-plan finalize). Phase is derived from
+# durable issue labels so every harness resolves it identically and races
+# with the triggering event are impossible.
+PHASE_IMPLEMENT_LABEL = "lbm:phase-implement"
+PHASE_PLAN_LABEL = "lbm:phase-plan"
+
+
+def resolve_phase(config: dict, labels: list[str]) -> str:
+    """Return the current iteration phase: 'plan' or 'implement'.
+
+    Rule: if the plan step is enabled and the issue has not yet been flipped to
+    implement (no PHASE_IMPLEMENT_LABEL), we are in the plan phase. Otherwise
+    (plan disabled, or already flipped) it's the implement phase — today's flow.
+    """
+    if get_plan_config(config)["enabled"] and PHASE_IMPLEMENT_LABEL not in (labels or []):
+        return "plan"
+    return "implement"

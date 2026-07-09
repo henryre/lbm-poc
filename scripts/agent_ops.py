@@ -34,6 +34,7 @@ except ModuleNotFoundError:
 import base64
 import random
 
+import config_parser
 from models import AgentConfig, ChecksConfig, LBMConfig, LLMConfig
 
 CONFIG_PATH = os.environ.get(
@@ -273,6 +274,47 @@ def dispatch_agent(issue_num: str, agent_harness: str) -> None:
         f"agent={agent_harness}",
         check=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Plan step (two-phase iterations) — pure helpers
+# ---------------------------------------------------------------------------
+
+PLAN_STATS_MARKER = "<!-- lbm:stats"
+
+
+def build_task_prompt(issue_num: str, phase: str, plan_dir: str = "lbm-plans") -> str:
+    """Phase-specific agent instructions, appended to the issue body / system prompt.
+
+    Plan phase: write a plan to the canonical per-issue path and open a PR, do
+    not implement. Implement phase: implement against the approved plan already
+    merged to the default branch. The path is identical on every branch so the
+    winning plan merges cleanly with no rename.
+    """
+    path = f"{plan_dir}/issue-{issue_num}/plan.md"
+    if phase == "plan":
+        return (
+            f"PLAN PHASE — do NOT implement the feature yet. Research the codebase and "
+            f"write a concrete implementation plan for issue #{issue_num} to `{path}` "
+            f"(create the directory). Open a PR titled 'Plan: <summary>'. The plan should "
+            f"cover approach, files to change, testing, and risks. Commit and push only "
+            f"the plan file."
+        )
+    return (
+        f"IMPLEMENT PHASE — implement issue #{issue_num} following the approved plan at "
+        f"`{path}` (already merged to the default branch; read it first). Open a PR with "
+        f"the implementation. Commit and push."
+    )
+
+
+def plan_file_url(repo: str, branch: str, issue_num: str, plan_dir: str = "lbm-plans") -> str:
+    """GitHub blob URL that renders a branch's plan.md in Markdown-preview mode."""
+    return f"https://github.com/{repo}/blob/{branch}/{plan_dir}/issue-{issue_num}/plan.md"
+
+
+def _plan_rev_allowed(current_revs: int, cap: int) -> bool:
+    """True if another plan-feedback revision is within the configured cap."""
+    return current_revs < cap
 
 
 # ---------------------------------------------------------------------------

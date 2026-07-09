@@ -76,6 +76,31 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class PlanConfig:
+    """Opt-in two-phase iterations (plan phase -> implement phase).
+
+    When ``enabled``, each agent first proposes a plan; a winner is merged into
+    ``dir/issue-<N>/plan.md`` (via /merge-plan) and agents then implement against
+    it. ``feedback_revs`` caps plan feedback rounds; ``prototype`` (fast-follow)
+    allows a prototype run before planning.
+    """
+
+    enabled: bool = False
+    dir: str = "lbm-plans"
+    feedback_revs: int = 1
+    prototype: bool = False
+
+    @classmethod
+    def from_dict(cls, d: dict) -> PlanConfig:
+        return cls(
+            enabled=d.get("enabled", False),
+            dir=d.get("dir", "lbm-plans"),
+            feedback_revs=d.get("feedback_revs", 1),
+            prototype=d.get("prototype", False),
+        )
+
+
+@dataclass(frozen=True)
 class DeployConfig:
     platform: str = "none"
     preview_env: str = "Preview"
@@ -104,6 +129,7 @@ class LBMConfig:
     checks: ChecksConfig
     llm: LLMConfig
     deploy: DeployConfig
+    plan: PlanConfig = field(default_factory=PlanConfig)
 
     @classmethod
     def from_parsed_toml(cls, raw: dict) -> LBMConfig:
@@ -159,5 +185,6 @@ class LBMConfig:
         checks = ChecksConfig.from_dict(raw.get("checks", {}))
         llm = LLMConfig.from_dict(raw.get("llm", {}))
         deploy = DeployConfig.from_dict(raw.get("deploy", {}))
+        plan = PlanConfig.from_dict(raw.get("plan", {}))
 
-        return cls(agents=agents, checks=checks, llm=llm, deploy=deploy)
+        return cls(agents=agents, checks=checks, llm=llm, deploy=deploy, plan=plan)
