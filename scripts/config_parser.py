@@ -321,3 +321,24 @@ def derive_repair_instructions(config: dict) -> str:
         f"{steps_text}\n\n"
         "Only commit and push when ALL steps pass."
     )
+
+
+def get_repair_comment_triggers(config: dict) -> list[str]:
+    """Comment substrings that trigger a repair (empty list = disabled)."""
+    triggers = config.get("checks", {}).get("repair_comment_triggers", [])
+    return triggers if isinstance(triggers, list) else []
+
+
+def matches_repair_trigger(body: str, triggers: list[str]) -> bool:
+    """True if ``body`` contains any configured trigger substring."""
+    text = body or ""
+    return any(t and t in text for t in triggers)
+
+
+def strip_repair_triggers(body: str, triggers: list[str]) -> str:
+    """Remove all trigger substrings from ``body`` (so dispatched context can't re-match)."""
+    text = body or ""
+    for t in triggers:
+        if t:
+            text = text.replace(t, "")
+    return text.strip()

@@ -47,6 +47,7 @@ class ChecksConfig:
     repair_from: list[str] = field(default_factory=list)
     max_repair_attempts: int = 10
     max_ralph_loops: int = 0
+    repair_comment_triggers: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict) -> ChecksConfig:
@@ -55,6 +56,7 @@ class ChecksConfig:
             repair_from=d.get("repair_from", []),
             max_repair_attempts=d.get("max_repair_attempts", 10),
             max_ralph_loops=d.get("max_ralph_loops", 0),
+            repair_comment_triggers=d.get("repair_comment_triggers", []),
         )
 
 
