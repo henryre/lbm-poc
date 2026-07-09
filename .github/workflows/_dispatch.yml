@@ -162,6 +162,24 @@ jobs:
         run: |
           ISSUE_NUM="${{ github.event.issue.number }}"
 
+          # Resolve phase (plan vs implement) from durable issue labels, then
+          # choose the table header/column. On the implement-phase re-fire (after
+          # /merge-plan), this posts the ## Agent Implementations table.
+          LABELS=$(gh issue view "$ISSUE_NUM" --repo "${{ github.repository }}" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+          PHASE=$(python3 -c "
+          import sys, os
+          sys.path.insert(0, '.lbm/scripts')
+          import config_parser
+          cfg = config_parser.load_config('${{ inputs.config-path }}')
+          labels = [x for x in '''$LABELS'''.split(',') if x]
+          print(config_parser.resolve_phase(cfg, labels))
+          ")
+          if [ "$PHASE" = "plan" ]; then
+            HEADER="## Agent Plans"; COL="Plan"
+          else
+            HEADER="## Agent Implementations"; COL="Preview"
+          fi
+
           # Check if aliases already exist (lock: don't regenerate on retag)
           EXISTING=$(python3 -c "
           import sys
@@ -206,15 +224,24 @@ jobs:
               print(f'| {alias} | ⏳ Running... |  |  |  |')
           ")
 
-          gh issue comment "$ISSUE_NUM" --body "## Agent Implementations
+          # Idempotent: don't repost a table that already exists for this phase
+          # (guards the implement-phase re-fire and any label re-application).
+          EXISTS=$(gh api "repos/${{ github.repository }}/issues/$ISSUE_NUM/comments" \
+            --jq "[.[] | select(.body | startswith(\"$HEADER\"))] | length" 2>/dev/null || echo "0")
 
-          | Agent | Status | PR | Preview | Run |
+          if [ "$EXISTS" = "0" ]; then
+            gh issue comment "$ISSUE_NUM" --body "$HEADER
+
+          | Agent | Status | PR | ${COL} | Run |
           |-------|--------|-----|---------|-----|
           ${STATUS}
 
           ---
           *Agents are working on this issue. This comment will be updated as each completes.*
           <!-- lbm:aliases:${ENCODED} -->"
+          else
+            echo "Status table '$HEADER' already exists for issue #$ISSUE_NUM; skipping."
+          fi
 
       - name: Dispatch agents
         if: steps.config.outputs.skip == 'false'

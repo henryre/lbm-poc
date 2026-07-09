@@ -125,6 +125,37 @@ jobs:
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      # Resolve plan/implement phase from durable issue labels. In the plan
+      # phase, deliver the plan instructions to Claude via --append-system-prompt
+      # (race-free: keyed off labels, not the event's issue body).
+      - name: Resolve phase
+        id: phase
+        if: steps.trigger.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          LABELS=$(gh issue view "${{ github.event.issue.number }}" --repo "${{ github.repository }}" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+          python3 -c "
+          import sys, os
+          sys.path.insert(0, '.lbm/scripts')
+          import config_parser
+          from agent_ops import build_task_prompt
+          cfg = config_parser.load_config(os.environ['LBM_CONFIG_PATH'])
+          labels = [x for x in '''$LABELS'''.split(',') if x]
+          phase = config_parser.resolve_phase(cfg, labels)
+          plan_dir = config_parser.get_plan_config(cfg)['dir']
+          issue = '${{ github.event.issue.number }}'
+          args = ''
+          if phase == 'plan':
+              prompt = build_task_prompt(issue, 'plan', plan_dir).replace(\"'\", \"'\\\\''\")
+              args = \"--append-system-prompt '\" + prompt + \"'\"
+          with open('$GITHUB_OUTPUT', 'a') as f:
+              f.write(f'phase={phase}\n')
+              f.write(f'plan_dir={plan_dir}\n')
+              f.write(f'phase_args={args}\n')
+          "
+
       # Runtime setup — conditional on build.runtime
       - uses: actions/setup-node@v4
         if: steps.trigger.outputs.skip == 'false' && steps.config.outputs.runtime == 'node'
@@ -164,7 +195,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }} ${{ steps.phase.outputs.phase_args }}"
 
       # Claude Code (attempt 1) — Portkey gateway
       - name: Run Claude Code (attempt 1)
@@ -182,7 +213,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }} ${{ steps.phase.outputs.phase_args }}"
 
       - name: Wait before retry
         if: >-
@@ -206,7 +237,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }} ${{ steps.phase.outputs.phase_args }}"
 
       # Claude Code (attempt 2) — Portkey gateway
       - name: Run Claude Code (attempt 2)
@@ -227,7 +258,7 @@ jobs:
           label_trigger: ${{ steps.config.outputs.ready_label }}
           allowed_bots: "github-actions[bot],lbm-bot[bot]"
           branch_prefix: ${{ steps.config.outputs.branch_prefix }}
-          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }}"
+          claude_args: "--allowedTools ${{ steps.config.outputs.allowed_tools }} ${{ steps.config.outputs.extra_claude_args }} ${{ steps.phase.outputs.phase_args }}"
 
       - name: Agent diagnostics
         if: always() && github.event_name == 'issues' && steps.trigger.outputs.skip == 'false'
@@ -302,6 +333,8 @@ jobs:
           ISSUE_NUM="${{ github.event.issue.number }}"
           BRANCH_PREFIX="${{ steps.config.outputs.branch_prefix }}"
           AGENT_LABEL="${{ steps.config.outputs.agent_label }}"
+          PHASE="${{ steps.phase.outputs.phase }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           # Delete claude[bot] verbose comments
           gh api "repos/${{ github.repository }}/issues/${ISSUE_NUM}/comments" \
@@ -319,7 +352,11 @@ jobs:
           echo "Matched branch: ${BRANCH:-<none>}"
 
           if [ -z "$BRANCH" ]; then
-            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            if [ "$PHASE" = "plan" ]; then
+              python3 /tmp/_lbm_scripts/agent_ops.py post-plan-result "$ISSUE_NUM" "$AGENT_LABEL" "" "" "$RUN_URL"
+            else
+              python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "" "$RUN_URL"
+            fi
             exit 0
           fi
 
@@ -332,8 +369,9 @@ jobs:
             PR_NUM=$EXISTING_PR
           else
             TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq .title)
+            if [ "$PHASE" = "plan" ]; then PR_TITLE="Plan: ${TITLE}"; else PR_TITLE="${TITLE}"; fi
             gh pr create \
-              --title "$TITLE" \
+              --title "$PR_TITLE" \
               --body "Implements #${ISSUE_NUM}
 
           Generated by automated agent." \
@@ -343,4 +381,8 @@ jobs:
             PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null || echo "")
           fi
 
-          python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$PHASE" = "plan" ]; then
+            python3 /tmp/_lbm_scripts/agent_ops.py post-plan-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "$BRANCH" "$RUN_URL"
+          else
+            python3 /tmp/_lbm_scripts/agent_ops.py post-agent-result "$ISSUE_NUM" "$AGENT_LABEL" "$PR_NUM" "$RUN_URL"
+          fi

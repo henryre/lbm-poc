@@ -37,7 +37,8 @@ jobs:
   merge:
     if: >-
       github.event_name == 'issue_comment' &&
-      startsWith(github.event.comment.body, '/merge')
+      startsWith(github.event.comment.body, '/merge') &&
+      !startsWith(github.event.comment.body, '/merge-plan')
     runs-on: ubuntu-latest
     concurrency:
       group: merge-${{ github.event.issue.number }}
@@ -160,6 +161,93 @@ jobs:
               gh issue comment "$ISSUE_NUM" --body "CI is still running on ${AGENT_NAME} PR #${WINNER_PR}. Will merge automatically when checks pass."
             fi
           fi
+
+  # -----------------------------------------------------------------------
+  # /merge-plan command — select a winning PLAN (plan step). No feedback ->
+  # finalize (merge plan, flip to implement phase). With feedback -> one bounded
+  # plan revision. Mirrors /merge; delegates to agent_ops.py merge-plan.
+  # -----------------------------------------------------------------------
+  merge-plan:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      startsWith(github.event.comment.body, '/merge-plan')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: merge-plan-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
+      - name: Acknowledge command
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content='+1' 2>/dev/null || true
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ env.LBM_TOKEN }}
+
+      - name: Parse and select plan
+        env:
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          # Parse: /merge-plan <alias> [feedback]. Alias = first two words
+          # (adjective + animal); the rest (if any) is feedback.
+          PARSE_RESULT=$(python3 -c "
+          import re, os, json
+          comment = os.environ['COMMENT_BODY'].strip()
+          text = re.sub(r'^/merge-plan\s*', '', comment.split('\n')[0])
+          parts = text.split(None, 2)
+          if len(parts) >= 3:
+              alias, feedback = parts[0] + ' ' + parts[1], parts[2]
+          elif len(parts) == 2:
+              alias, feedback = parts[0] + ' ' + parts[1], ''
+          else:
+              alias, feedback = text, ''
+          print(json.dumps({'alias': alias, 'feedback': feedback}))
+          ")
+          ALIAS_TEXT=$(echo "$PARSE_RESULT" | jq -r '.alias')
+          FEEDBACK=$(echo "$PARSE_RESULT" | jq -r '.feedback')
+
+          if [ -z "$ALIAS_TEXT" ]; then
+            gh issue comment "$ISSUE_NUM" --body "Use: \`/merge-plan <alias> [feedback]\` (e.g. \`/merge-plan Swift Falcon\`)."
+            exit 0
+          fi
+
+          AGENT_LABEL=$(python3 .lbm/scripts/agent_ops.py aliases resolve "$ISSUE_NUM" "$ALIAS_TEXT" 2>/dev/null || echo "")
+          if [ -z "$AGENT_LABEL" ]; then
+            gh issue comment "$ISSUE_NUM" --body "Unknown agent alias '$ALIAS_TEXT'. Check the \`## Agent Plans\` table for valid aliases."
+            exit 0
+          fi
+
+          python3 .lbm/scripts/agent_ops.py merge-plan "$ISSUE_NUM" "$AGENT_LABEL" "$FEEDBACK"
 
   # -----------------------------------------------------------------------
   # /no-winner command — close the iteration with no winning agent
