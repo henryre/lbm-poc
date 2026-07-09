@@ -331,8 +331,13 @@ def find_status_row(body: str, agent_name: str) -> re.Match | None:
     return pattern.search(body)
 
 
-def update_status_row(body: str, agent_name: str, status: str, pr: str, preview: str, run: str) -> str:
-    """Update a single row in the status table. Returns the updated body."""
+def update_status_row(
+    body: str, agent_name: str, status: str, pr: str, preview: str, run: str, preview_label: str = "Preview"
+) -> str:
+    """Update a single row in the status table. Returns the updated body.
+
+    ``preview_label`` names the 4th-column link (default "Preview"; the plan
+    phase reuses the same table shape with the label "plan")."""
     match = find_status_row(body, agent_name)
     if not match:
         return body
@@ -364,7 +369,7 @@ def update_status_row(body: str, agent_name: str, status: str, pr: str, preview:
     if pr_text is not None:
         cells[2] = pr_text
     if preview:
-        cells[3] = f"[Preview]({preview})"
+        cells[3] = f"[{preview_label}]({preview})"
     if run:
         cells[4] = f"[Logs]({run})"
 
@@ -899,19 +904,25 @@ def _set_impl_comment_preview(
         )
 
 
-def cmd_update_status(args: list[str]) -> None:
-    """Update an agent's row in the status comment on an issue."""
-    if len(args) < 3:
-        print("Usage: update-status <issue_number> <agent_label> <status> [pr] [preview] [run]", file=sys.stderr)
-        sys.exit(1)
+IMPL_STATUS_HEADER = "## Agent Implementations"
+PLAN_STATUS_HEADER = "## Agent Plans"
 
-    issue_num = args[0]
-    agent_label = args[1]
-    status = args[2]
-    pr_number = args[3] if len(args) > 3 else ""
-    preview_url = args[4] if len(args) > 4 else ""
-    run_url = args[5] if len(args) > 5 else ""
 
+def _apply_status_update(
+    issue_num: str,
+    agent_label: str,
+    status: str,
+    pr_number: str,
+    preview_url: str,
+    run_url: str,
+    header: str = IMPL_STATUS_HEADER,
+    preview_label: str = "Preview",
+) -> str | None:
+    """Patch one agent's row in the ``header`` status comment on an issue.
+
+    Returns the resolved display name (or None if the comment/agent is missing).
+    Shared by the implement-phase status table and the plan-phase table.
+    """
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not repo:
         print("GITHUB_REPOSITORY not set", file=sys.stderr)
@@ -927,19 +938,18 @@ def cmd_update_status(args: list[str]) -> None:
         "api",
         f"repos/{repo}/issues/{issue_num}/comments",
         "--jq",
-        '[.[] | select(.body | startswith("## Agent Implementations")) | {id, body}] | last',
+        f'[.[] | select(.body | startswith("{header}")) | {{id, body}}] | last',
         check=False,
     )
 
     if not comments_json or comments_json == "null":
-        print("No status comment found")
-        return
+        print(f"No status comment found for header '{header}'")
+        return None
 
     comment = json.loads(comments_json)
     comment_id = comment["id"]
     body = comment["body"]
 
-    # Determine display name: use alias if mapping exists, fall back to agent.name
     mapping = read_alias_mapping(issue_num)
     if mapping:
         reverse = reverse_alias_mapping(mapping)
@@ -947,7 +957,7 @@ def cmd_update_status(args: list[str]) -> None:
     else:
         agent_name = agent.name
 
-    new_body = update_status_row(body, agent_name, status, pr_number, preview_url, run_url)
+    new_body = update_status_row(body, agent_name, status, pr_number, preview_url, run_url, preview_label)
     new_body = check_all_done(new_body)
 
     gh(
@@ -958,12 +968,185 @@ def cmd_update_status(args: list[str]) -> None:
         "-f",
         f"body={new_body}",
     )
-    print(f"Updated {agent_name}: status={status}, pr={pr_number}, preview={preview_url}, run={run_url}")
+    print(f"Updated {agent_name} [{header}]: status={status}, pr={pr_number}, link={preview_url}, run={run_url}")
+    return agent_name
+
+
+def cmd_update_status(args: list[str]) -> None:
+    """Update an agent's row in the status comment on an issue."""
+    if len(args) < 3:
+        print("Usage: update-status <issue_number> <agent_label> <status> [pr] [preview] [run]", file=sys.stderr)
+        sys.exit(1)
+
+    issue_num = args[0]
+    agent_label = args[1]
+    status = args[2]
+    pr_number = args[3] if len(args) > 3 else ""
+    preview_url = args[4] if len(args) > 4 else ""
+    run_url = args[5] if len(args) > 5 else ""
+
+    agent_name = _apply_status_update(issue_num, agent_label, status, pr_number, preview_url, run_url)
 
     # Close the loop on the per-agent implementation comment too (not just the
     # status table), so its "Preview" line reflects the final URL.
-    if status == "preview" and preview_url:
+    if agent_name and status == "preview" and preview_url:
+        repo = os.environ.get("GITHUB_REPOSITORY", "")
         _set_impl_comment_preview(repo, issue_num, agent_name, pr_number, preview_url)
+
+
+def cmd_post_plan_result(args: list[str]) -> None:
+    """Plan-phase analog of post-agent-result.
+
+    Updates the ``## Agent Plans`` table row (status, plan PR, direct plan-file
+    link) and posts a per-agent plan comment linking the plan in Markdown-preview
+    mode on the agent's branch.
+
+    Usage: post-plan-result <issue> <agent_label> [pr] [branch] [run_url]
+    """
+    if len(args) < 2:
+        print("Usage: post-plan-result <issue> <agent_label> [pr] [branch] [run_url]", file=sys.stderr)
+        sys.exit(1)
+
+    issue_num = args[0]
+    agent_label = args[1]
+    pr_num = args[2] if len(args) > 2 else ""
+    branch = args[3] if len(args) > 3 else ""
+    run_url = args[4] if len(args) > 4 else ""
+
+    plan_dir = config_parser.get_plan_config(config_parser.load_config(CONFIG_PATH))["dir"]
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+
+    if not pr_num:
+        _apply_status_update(
+            issue_num, agent_label, "no-changes", "", "", run_url, header=PLAN_STATUS_HEADER, preview_label="plan"
+        )
+        return
+
+    url = plan_file_url(repo, branch, issue_num, plan_dir) if (repo and branch) else ""
+    agent_name = _apply_status_update(
+        issue_num, agent_label, "done", pr_num, url, run_url, header=PLAN_STATUS_HEADER, preview_label="plan"
+    )
+
+    # Per-agent plan comment with the direct MD-preview link (the user wants
+    # issue comments to link straight to each plan file on its branch).
+    if agent_name:
+        display = agent_name
+    else:
+        a = label_to_agent(load_agents(), agent_label)
+        display = a.name if a else "Agent"
+    body = f"""## {display} Plan
+- **Plan PR**: #{pr_num}
+- **Plan**: {f'[{plan_dir}/issue-{issue_num}/plan.md]({url})' if url else '_pending_'}"""
+    if run_url:
+        body += f"\n- **Run**: [View logs]({run_url})"
+    body += "\n\n---\n*Review the competing plans, then select one with `/merge-plan <alias> [feedback]`.*"
+    gh("issue", "comment", issue_num, "--body", body)
+
+
+def _find_agent_pr(issue_num: str, agent: AgentConfig) -> str:
+    """Return the agent's latest PR number for an issue (branch-prefix or label), or ''."""
+    jq_filter = (
+        f"[.[] | select("
+        f'(.body | test("Implements #{issue_num}\\\\b")) and '
+        f'((.headRefName | startswith("{agent.branch_prefix}")) or '
+        f'(.labels | map(.name) | index("{agent.label}"))))] | last | .number // empty'
+    )
+    return gh("pr", "list", "--json", "number,body,headRefName,labels", "--jq", jq_filter, check=False).strip()
+
+
+def _write_stats_marker(issue_num: str, key: str, value: str) -> None:
+    """Post a machine-readable stats comment the LBM Hub keys off (plan/code winner)."""
+    payload = json.dumps({key: value, "issue": issue_num})
+    gh("issue", "comment", issue_num, "--body", f"{PLAN_STATS_MARKER} {payload} -->")
+
+
+def cmd_merge_plan(args: list[str]) -> None:
+    """Select a winning plan (mirrors /merge).
+
+    - No feedback -> FINALIZE: merge the plan PR to the default branch, close the
+      other plan PRs, record the plan-winner stat, flip the issue to the implement
+      phase, and re-apply the ready label to re-dispatch every agent to implement.
+    - With feedback -> REVISE (bounded by [plan].feedback_revs): post the feedback
+      to the agent's plan PR so it revises plan.md in place. The maintainer then
+      runs /merge-plan <alias> (no feedback) to finalize.
+
+    Usage: merge-plan <issue> <agent_label> [feedback...]
+    """
+    if len(args) < 2:
+        print("Usage: merge-plan <issue> <agent_label> [feedback...]", file=sys.stderr)
+        sys.exit(1)
+
+    issue_num = args[0]
+    agent_label = args[1]
+    feedback = " ".join(args[2:]).strip()
+
+    config = load_config()
+    raw = config_parser.load_config(CONFIG_PATH)
+    plan_cfg = config_parser.get_plan_config(raw)
+    agent = label_to_agent(config.agents, agent_label)
+    if not agent:
+        gh("issue", "comment", issue_num, "--body", f"Unknown agent label '{agent_label}'.")
+        return
+
+    display = agent.name
+    mapping = read_alias_mapping(issue_num)
+    if mapping:
+        display = reverse_alias_mapping(mapping).get(agent_label, agent.name)
+
+    pr_num = _find_agent_pr(issue_num, agent)
+    if not pr_num:
+        gh("issue", "comment", issue_num, "--body", f"No {display} plan PR found for this issue.")
+        return
+
+    # --- Feedback revision path ------------------------------------------
+    if feedback:
+        revs = count_pr_comments(pr_num, "plan-rev")
+        if not _plan_rev_allowed(revs, plan_cfg["feedback_revs"]):
+            gh(
+                "issue", "comment", issue_num,
+                "--body", f"Plan feedback limit reached ({plan_cfg['feedback_revs']}). "
+                f"Run `/merge-plan {display}` (no feedback) to finalize.",
+            )
+            return
+        pat_token = os.environ.get("PAT_TOKEN", "")
+        rules = (
+            "IMPORTANT: You are fully autonomous. Revise ONLY the plan file per this "
+            "feedback; do not implement. Commit and push."
+        )
+        rev_body = f"{agent.mention} [plan-rev] {feedback}\n\n---\n{rules}"
+        if pat_token:
+            subprocess.run(["gh", "pr", "comment", pr_num, "--body", rev_body],
+                           env={**os.environ, "GH_TOKEN": pat_token}, check=False)
+        else:
+            gh("pr", "comment", pr_num, "--body", rev_body, check=False)
+        gh("issue", "comment", issue_num, "--body",
+           f"Plan feedback sent to {display} (PR #{pr_num}). Run `/merge-plan {display}` to finalize after the revision.")
+        return
+
+    # --- Finalize path ---------------------------------------------------
+    gh("pr", "ready", pr_num, check=False)
+    gh("pr", "merge", pr_num, "--squash", "--delete-branch", check=False)
+    # Verify merge succeeded (surface conflicts rather than silently proceeding).
+    state = gh("pr", "view", pr_num, "--json", "state", "--jq", ".state", check=False)
+    if state and state != "MERGED":
+        gh("issue", "comment", issue_num, "--body",
+           f"Failed to merge {display} plan PR #{pr_num} (state={state}). Check for conflicts.")
+        return
+
+    close_agent_prs(issue_num, f"Plan not selected — {display} (PR #{pr_num}) was chosen.", exclude_pr=pr_num)
+    _write_stats_marker(issue_num, "plan_winner", agent_label)
+
+    # Flip to implement phase (durable label), then re-apply the ready label to
+    # re-fire issues.labeled -> both claude (label_trigger) and the router
+    # (which dispatches codex/openhands) re-run, now in the implement phase.
+    ready_label = raw.get("lbm", {}).get("ready_label", "ready-for-dev")
+    gh("issue", "edit", issue_num, "--add-label", config_parser.PHASE_IMPLEMENT_LABEL, check=False)
+    gh("issue", "edit", issue_num, "--remove-label", ready_label, check=False)
+    gh("issue", "edit", issue_num, "--add-label", ready_label, check=False)
+
+    gh("issue", "comment", issue_num, "--body",
+       f"✅ Selected {display}'s plan (merged PR #{pr_num} to `{plan_cfg['dir']}/issue-{issue_num}/plan.md`). "
+       f"Agents are now implementing against it — the `## Agent Implementations` table will track code PRs.")
 
 
 def cmd_summarize_pr(args: list[str]) -> None:
@@ -1178,6 +1361,8 @@ COMMANDS = {
     "lookup": cmd_lookup,
     "close-previous-prs": cmd_close_previous_prs,
     "post-agent-result": cmd_post_agent_result,
+    "post-plan-result": cmd_post_plan_result,
+    "merge-plan": cmd_merge_plan,
     "close-losing-prs": cmd_close_losing_prs,
     "record-no-winner": cmd_record_no_winner,
     "dispatch-repair": cmd_dispatch_repair,
