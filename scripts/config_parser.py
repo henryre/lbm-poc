@@ -342,3 +342,10 @@ def strip_repair_triggers(body: str, triggers: list[str]) -> str:
         if t:
             text = text.replace(t, "")
     return text.strip()
+
+
+def get_preview_comment_marker(config: dict) -> str:
+    """Marker whose presence in a PR comment sets that comment as the agent's
+    preview link in the status table (empty = disabled)."""
+    marker = config.get("checks", {}).get("preview_comment_marker", "")
+    return marker if isinstance(marker, str) else ""

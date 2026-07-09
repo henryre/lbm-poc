@@ -720,3 +720,85 @@ jobs:
             exit 0
           fi
           python3 .lbm/scripts/agent_ops.py dispatch-repair "$PR_NUM" "$CLEANED"
+
+  # -----------------------------------------------------------------------
+  # Preview-comment marker — a comment containing [checks].preview_comment_marker
+  # sets that comment as the agent's Preview link in the status table (the
+  # report IS the preview, like a Vercel deploy URL). Reuses update-status.
+  # -----------------------------------------------------------------------
+  preview-comment:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      !contains(github.event.comment.body, '[repair-attempt]') &&
+      (
+        contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) ||
+        github.event.comment.user.type == 'Bot'
+      )
+    runs-on: ubuntu-latest
+    concurrency:
+      group: preview-comment-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ env.LBM_TOKEN }}
+
+      - name: Match preview marker and set status-table preview link
+        env:
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          PR_NUM: ${{ github.event.issue.number }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          MARKER=$(python3 -c "
+          import os, sys
+          sys.path.insert(0, '.lbm/scripts')
+          import config_parser
+          print(config_parser.get_preview_comment_marker(config_parser.load_config(os.environ['LBM_CONFIG_PATH'])))
+          ")
+          if [ -z "$MARKER" ] || ! printf '%s' "$COMMENT_BODY" | grep -qF "$MARKER"; then
+            echo "No preview marker in comment; skipping."
+            exit 0
+          fi
+          PR_DATA=$(gh pr view "$PR_NUM" --json headRefName,body)
+          BRANCH=$(echo "$PR_DATA" | jq -r '.headRefName')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body')
+          AGENT_INFO=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" 2>/dev/null || echo "")
+          if [ -z "$AGENT_INFO" ]; then
+            echo "Not an agent branch: $BRANCH"
+            exit 0
+          fi
+          AGENT_LABEL=$(echo "$AGENT_INFO" | grep "^label=" | cut -d= -f2)
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' | head -n1 || echo "")
+          if [ -z "$ISSUE_NUM" ]; then
+            echo "No linked issue found in PR body; skipping."
+            exit 0
+          fi
+          echo "Preview for $AGENT_LABEL (issue #$ISSUE_NUM, PR #$PR_NUM) -> $COMMENT_URL"
+          python3 .lbm/scripts/agent_ops.py update-status "$ISSUE_NUM" "$AGENT_LABEL" preview "$PR_NUM" "$COMMENT_URL"

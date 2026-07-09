@@ -32,3 +32,16 @@ def test_checksconfig_parses_triggers():
         MARK
     ]
     assert ChecksConfig.from_dict({}).repair_comment_triggers == []
+
+
+def test_preview_marker_present_and_absent():
+    assert config_parser.get_preview_comment_marker(
+        {"checks": {"preview_comment_marker": "<!-- lbm-preview -->"}}
+    ) == "<!-- lbm-preview -->"
+    assert config_parser.get_preview_comment_marker({"checks": {}}) == ""
+    assert config_parser.get_preview_comment_marker({}) == ""
+
+
+def test_checksconfig_parses_preview_marker():
+    assert ChecksConfig.from_dict({"preview_comment_marker": "<!-- lbm-preview -->"}).preview_comment_marker == "<!-- lbm-preview -->"
+    assert ChecksConfig.from_dict({}).preview_comment_marker == ""

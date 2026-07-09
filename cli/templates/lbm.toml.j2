@@ -28,6 +28,10 @@ max_ralph_loops = 0
 # comment body as failure context. Empty list disables the feature.
 repair_comment_triggers = ["<!-- lbm-repair -->"]
 
+# A PR comment containing this marker becomes the agent's Preview link in the
+# status table (the report is the preview). Empty disables the feature.
+preview_comment_marker = "<!-- lbm-preview -->"
+
 [deploy]
 platform = "{{ deploy_platform }}"
 {% if deploy_platform != "none" %}
