@@ -1140,6 +1140,10 @@ def cmd_merge_plan(args: list[str]) -> None:
     # re-fire issues.labeled -> both claude (label_trigger) and the router
     # (which dispatches codex/openhands) re-run, now in the implement phase.
     ready_label = raw.get("lbm", {}).get("ready_label", "ready-for-dev")
+    # gh issue edit --add-label silently no-ops for a label that doesn't exist
+    # in the repo, so ensure it exists first (same guard used for agent labels).
+    gh("label", "create", config_parser.PHASE_IMPLEMENT_LABEL,
+       "--color", "5319E7", "--description", "LBM: implement phase active", "--force", check=False)
     gh("issue", "edit", issue_num, "--add-label", config_parser.PHASE_IMPLEMENT_LABEL, check=False)
     gh("issue", "edit", issue_num, "--remove-label", ready_label, check=False)
     gh("issue", "edit", issue_num, "--add-label", ready_label, check=False)
