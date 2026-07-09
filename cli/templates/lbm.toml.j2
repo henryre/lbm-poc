@@ -24,6 +24,10 @@ repair_from = {{ required_checks }}
 max_repair_attempts = 10
 max_ralph_loops = 0
 
+# PR comments containing any of these substrings trigger a repair, with the
+# comment body as failure context. Empty list disables the feature.
+repair_comment_triggers = ["<!-- lbm-repair -->"]
+
 [deploy]
 platform = "{{ deploy_platform }}"
 {% if deploy_platform != "none" %}
