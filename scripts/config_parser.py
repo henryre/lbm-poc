@@ -359,6 +359,9 @@ def get_plan_config(config: dict) -> dict:
         "dir": p.get("dir", "lbm-plans"),
         "feedback_revs": int(p.get("feedback_revs", 1)),
         "prototype": bool(p.get("prototype", False)),
+        "plan_context_comment_marker": p.get(
+            "plan_context_comment_marker", "<!-- lbm-plan-context -->"
+        ),
     }
 
 

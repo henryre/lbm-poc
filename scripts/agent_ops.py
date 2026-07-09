@@ -283,23 +283,36 @@ def dispatch_agent(issue_num: str, agent_harness: str) -> None:
 PLAN_STATS_MARKER = "<!-- lbm:stats"
 
 
-def build_task_prompt(issue_num: str, phase: str, plan_dir: str = "lbm-plans") -> str:
+def build_task_prompt(
+    issue_num: str, phase: str, plan_dir: str = "lbm-plans", prototype: bool = False
+) -> str:
     """Phase-specific agent instructions, appended to the issue body / system prompt.
 
     Plan phase: write a plan to the canonical per-issue path and open a PR, do
     not implement. Implement phase: implement against the approved plan already
     merged to the default branch. The path is identical on every branch so the
-    winning plan merges cleanly with no rename.
+    winning plan merges cleanly with no rename. When ``prototype`` is set (plan
+    phase only), the agent may first open a prototype PR to gather evidence
+    before writing the plan.
     """
     path = f"{plan_dir}/issue-{issue_num}/plan.md"
     if phase == "plan":
-        return (
+        base = (
             f"PLAN PHASE — do NOT implement the feature yet. Research the codebase and "
             f"write a concrete implementation plan for issue #{issue_num} to `{path}` "
             f"(create the directory). Open a PR titled 'Plan: <summary>'. The plan should "
             f"cover approach, files to change, testing, and risks. Commit and push only "
             f"the plan file."
         )
+        if prototype:
+            base += (
+                " Optionally, if hands-on evidence would materially improve the plan, you "
+                "MAY first open a small PROTOTYPE PR (title 'Prototype: <summary>') with "
+                "minimal code to test one uncertainty; its automated run will post a report "
+                "and you will be re-invoked to write the plan using that report as context. "
+                "Skip the prototype when it isn't warranted."
+            )
+        return base
     return (
         f"IMPLEMENT PHASE — implement issue #{issue_num} following the approved plan at "
         f"`{path}` (already merged to the default branch; read it first). Open a PR with "
@@ -782,6 +795,58 @@ def cmd_dispatch_repair(args: list[str]) -> None:
             return
 
     _post_manual_intervention(issue_num, agent, pr_num, config.checks)
+
+
+def cmd_dispatch_plan_context(args: list[str]) -> None:
+    """Prototype iteration: re-invoke an agent to write its plan using a report.
+
+    Triggered when a prototype PR's auto-run report carries the plan-context
+    marker. Resolves the agent + linked issue from the PR and posts an
+    ``@mention [plan-context] <report>`` comment (via PAT so it triggers the
+    harness) instructing the agent to write its plan. Capped at one re-invoke
+    per PR so a mis-emitting reporter can't loop.
+
+    Usage: dispatch-plan-context <pr_number> <context>
+    """
+    if len(args) < 2:
+        print("Usage: dispatch-plan-context <pr_number> <context>", file=sys.stderr)
+        sys.exit(1)
+
+    pr_num, context = args[0], args[1]
+    config = load_config()
+
+    branch = gh("pr", "view", pr_num, "--json", "headRefName", "--jq", ".headRefName", check=False)
+    if not branch:
+        print(f"PR #{pr_num} not found")
+        return
+    agent = branch_to_agent(config.agents, branch)
+    if not agent:
+        print(f"Not an agent branch: {branch}")
+        return
+
+    if count_pr_comments(pr_num, "plan-context") >= 1:
+        print(f"plan-context already dispatched for PR #{pr_num}; skipping")
+        return
+
+    pat_token = os.environ.get("PAT_TOKEN", "")
+    if not agent.mention or not pat_token:
+        print("Cannot dispatch plan-context (no mention or no PAT_TOKEN)")
+        return
+
+    plan_dir = config.plan.dir
+    issue_num = extract_issue_from_pr(pr_num) or "?"
+    body = (
+        f"{agent.mention} [plan-context] {context}\n\n"
+        f"Using the prototype results above as context, now write your implementation "
+        f"plan to `{plan_dir}/issue-{issue_num}/plan.md` and open a 'Plan: <summary>' PR. "
+        f"Do NOT implement the full feature yet. Commit and push."
+    )
+    subprocess.run(
+        ["gh", "pr", "comment", pr_num, "--body", body],
+        env={**os.environ, "GH_TOKEN": pat_token},
+        check=False,
+    )
+    print(f"Dispatched plan-context re-invoke for {agent.name} PR #{pr_num}")
 
 
 def _dispatch_repair_comment(pr_num: str, agent: AgentConfig, failure_context: str) -> None:
@@ -1370,6 +1435,7 @@ COMMANDS = {
     "close-losing-prs": cmd_close_losing_prs,
     "record-no-winner": cmd_record_no_winner,
     "dispatch-repair": cmd_dispatch_repair,
+    "dispatch-plan-context": cmd_dispatch_plan_context,
     "update-status": cmd_update_status,
     "summarize-pr": cmd_summarize_pr,
     "aliases": cmd_aliases,

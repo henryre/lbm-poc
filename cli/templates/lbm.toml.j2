@@ -40,6 +40,10 @@ preview_comment_marker = "<!-- lbm-preview -->"
 enabled = false
 # dir = "lbm-plans"      # where plans are committed
 # feedback_revs = 1      # max plan feedback revisions before finalize
+# prototype = false      # allow a prototype PR (auto-run -> report) before planning
+# A prototype-PR report carrying this marker re-invokes the agent to write its
+# plan using the report as context (requires prototype = true).
+# plan_context_comment_marker = "<!-- lbm-plan-context -->"
 
 [deploy]
 platform = "{{ deploy_platform }}"

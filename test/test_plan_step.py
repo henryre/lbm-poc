@@ -19,6 +19,7 @@ def test_get_plan_config_defaults():
         "dir": "lbm-plans",
         "feedback_revs": 1,
         "prototype": False,
+        "plan_context_comment_marker": "<!-- lbm-plan-context -->",
     }
 
 
@@ -27,6 +28,14 @@ def test_get_plan_config_enabled():
     assert cfg["enabled"] is True
     assert cfg["dir"] == "plans"
     assert cfg["feedback_revs"] == 2
+
+
+def test_get_plan_config_prototype_marker_default():
+    # Prototype iteration: report comments carrying this marker re-invoke the
+    # agent to write its plan. Defaults to the recommended marker.
+    assert config_parser.get_plan_config({})["plan_context_comment_marker"] == "<!-- lbm-plan-context -->"
+    cfg = config_parser.get_plan_config({"plan": {"plan_context_comment_marker": "<!-- x -->"}})
+    assert cfg["plan_context_comment_marker"] == "<!-- x -->"
 
 
 def test_planconfig_from_dict():
@@ -74,6 +83,20 @@ def test_build_task_prompt_implement():
 def test_build_task_prompt_custom_dir():
     t = build_task_prompt("12", "plan", "plans")
     assert "plans/issue-12/plan.md" in t
+
+
+def test_build_task_prompt_plan_prototype():
+    t = build_task_prompt("7", "plan", "lbm-plans", prototype=True)
+    assert "lbm-plans/issue-7/plan.md" in t
+    assert "do NOT implement" in t
+    assert "prototype" in t.lower()
+
+
+def test_build_task_prompt_implement_ignores_prototype():
+    # prototype only affects the plan phase
+    assert build_task_prompt("7", "implement", "lbm-plans", prototype=True) == build_task_prompt(
+        "7", "implement", "lbm-plans"
+    )
 
 
 # --- Task 3: plan_file_url -----------------------------------------------

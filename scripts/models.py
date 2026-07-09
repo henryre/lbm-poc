@@ -89,6 +89,7 @@ class PlanConfig:
     dir: str = "lbm-plans"
     feedback_revs: int = 1
     prototype: bool = False
+    plan_context_comment_marker: str = "<!-- lbm-plan-context -->"
 
     @classmethod
     def from_dict(cls, d: dict) -> PlanConfig:
@@ -97,6 +98,9 @@ class PlanConfig:
             dir=d.get("dir", "lbm-plans"),
             feedback_revs=d.get("feedback_revs", 1),
             prototype=d.get("prototype", False),
+            plan_context_comment_marker=d.get(
+                "plan_context_comment_marker", "<!-- lbm-plan-context -->"
+            ),
         )
 
 
