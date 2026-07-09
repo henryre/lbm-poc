@@ -32,6 +32,15 @@ repair_comment_triggers = ["<!-- lbm-repair -->"]
 # status table (the report is the preview). Empty disables the feature.
 preview_comment_marker = "<!-- lbm-preview -->"
 
+[plan]
+# Opt-in two-phase iterations: agents first propose a plan, a winner is merged
+# to lbm-plans/issue-<N>/plan.md via `/merge-plan <alias> [feedback]`, then agents
+# implement against it and the normal `/merge` flow picks the winning code PR.
+# Default off = today's single-phase flow.
+enabled = false
+# dir = "lbm-plans"      # where plans are committed
+# feedback_revs = 1      # max plan feedback revisions before finalize
+
 [deploy]
 platform = "{{ deploy_platform }}"
 {% if deploy_platform != "none" %}
