@@ -578,9 +578,13 @@ def cmd_post_agent_result(args: list[str]) -> None:
     gh("pr", "edit", pr_num, *label_args_list, check=False)
     cmd_update_status([issue_num, agent_label, "done", pr_num, "", run_url])
 
+    # "Deploying..." only makes sense with an active deploy platform. For repos
+    # whose preview is a report/comment (deploy=none), the preview arrives later
+    # via a preview_comment_marker -> update-status, so start neutral.
+    preview_placeholder = "Deploying..." if load_config().deploy.platform != "none" else "_pending_"
     body = f"""## {agent_name} Implementation
 - **PR**: #{pr_num}
-- **Preview**: Deploying..."""
+- **Preview**: {preview_placeholder}"""
 
     if run_url:
         body += f"\n- **Run**: [View logs]({run_url})"
@@ -819,6 +823,40 @@ def _post_manual_intervention(issue_num: str, agent: AgentConfig, pr_num: str, c
     gh("issue", "comment", issue_num, "--body", msg)
 
 
+def _set_impl_comment_preview(
+    repo: str, issue_num: str, agent_name: str, pr_number: str, preview_url: str
+) -> None:
+    """Finalize the '## {agent} Implementation' comment's Preview line in place.
+
+    The implementation comment is first posted with a placeholder (e.g.
+    'Deploying...'); this rewrites its Preview line to the real URL so the
+    comment closes the loop alongside the status table. No-op if not found.
+    """
+    if not (agent_name and pr_number and preview_url):
+        return
+    comments_json = gh(
+        "api",
+        f"repos/{repo}/issues/{issue_num}/comments",
+        "--jq",
+        f'[.[] | select(.body | startswith("## {agent_name} Implementation")) '
+        f'| select(.body | contains("#{pr_number}"))] | last | {{id, body}}',
+        check=False,
+    )
+    if not comments_json or comments_json == "null":
+        return
+    comment = json.loads(comments_json)
+    new_body = re.sub(
+        r"- \*\*Preview\*\*:.*", f"- **Preview**: {preview_url}", comment["body"]
+    )
+    if new_body != comment["body"]:
+        gh(
+            "api", "-X", "PATCH",
+            f"repos/{repo}/issues/comments/{comment['id']}",
+            "-f", f"body={new_body}",
+            check=False,
+        )
+
+
 def cmd_update_status(args: list[str]) -> None:
     """Update an agent's row in the status comment on an issue."""
     if len(args) < 3:
@@ -879,6 +917,11 @@ def cmd_update_status(args: list[str]) -> None:
         f"body={new_body}",
     )
     print(f"Updated {agent_name}: status={status}, pr={pr_number}, preview={preview_url}, run={run_url}")
+
+    # Close the loop on the per-agent implementation comment too (not just the
+    # status table), so its "Preview" line reflects the final URL.
+    if status == "preview" and preview_url:
+        _set_impl_comment_preview(repo, issue_num, agent_name, pr_number, preview_url)
 
 
 def cmd_summarize_pr(args: list[str]) -> None:
