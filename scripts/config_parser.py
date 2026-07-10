@@ -351,6 +351,16 @@ def get_preview_comment_marker(config: dict) -> str:
     return marker if isinstance(marker, str) else ""
 
 
+def get_blocked_comment_marker(config: dict) -> str:
+    """Marker whose presence in a PR comment flags the agent as ⛔ needs-human in
+    the status table — for environmental/infra failures the repair loop can't fix.
+    Distinct from repair_comment_triggers, so a report that carries this marker
+    (instead of a repair trigger) will NOT dispatch a pointless repair. Empty =
+    disabled."""
+    marker = config.get("checks", {}).get("blocked_comment_marker", "")
+    return marker if isinstance(marker, str) else ""
+
+
 def get_plan_config(config: dict) -> dict:
     """Plan-step config (absent/empty = disabled -> today's single-phase flow)."""
     p = config.get("plan", {})
@@ -371,6 +381,9 @@ def get_plan_config(config: dict) -> dict:
 # with the triggering event are impossible.
 PHASE_IMPLEMENT_LABEL = "lbm:phase-implement"
 PHASE_PLAN_LABEL = "lbm:phase-plan"
+# Marks a plan PR that a maintainer selected WITH feedback: once the agent
+# pushes its one revision (CI passes), the CI hook auto-finalizes the merge.
+PLAN_FINALIZE_LABEL = "lbm:plan-finalize"
 
 
 def resolve_phase(config: dict, labels: list[str]) -> str:

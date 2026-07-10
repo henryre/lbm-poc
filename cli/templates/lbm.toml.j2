@@ -32,6 +32,12 @@ repair_comment_triggers = ["<!-- lbm-repair -->"]
 # status table (the report is the preview). Empty disables the feature.
 preview_comment_marker = "<!-- lbm-preview -->"
 
+# A PR comment containing this marker flags the agent as "⛔ Needs human" in the
+# status table — for environmental/infra failures the repair loop can't fix.
+# Distinct from repair_comment_triggers, so emitting this instead of a repair
+# marker avoids a pointless repair loop. Empty disables the feature.
+blocked_comment_marker = "<!-- lbm-blocked -->"
+
 [plan]
 # Opt-in two-phase iterations: agents first propose a plan, a winner is merged
 # to lbm-plans/issue-<N>/plan.md via `/merge-plan <alias> [feedback]`, then agents

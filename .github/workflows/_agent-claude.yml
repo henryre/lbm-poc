@@ -128,9 +128,16 @@ jobs:
       # Resolve plan/implement phase from durable issue labels. In the plan
       # phase, deliver the plan instructions to Claude via --append-system-prompt
       # (race-free: keyed off labels, not the event's issue body).
+      # Only inject the plan/implement system prompt on the fresh issues.labeled
+      # DISPATCH. On an issue_comment re-invoke (@claude repair or [plan-rev]),
+      # github.event.issue.number is the PR — whose labels lack lbm:phase-implement
+      # (that label lives on the parent issue) — so resolving phase here would
+      # wrongly return "plan" and make repair write a plan instead of fixing the
+      # PR. Comment re-invokes carry their own instructions in the comment body,
+      # so no phase prompt is needed.
       - name: Resolve phase
         id: phase
-        if: steps.trigger.outputs.skip == 'false'
+        if: steps.trigger.outputs.skip == 'false' && github.event_name == 'issues'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LBM_CONFIG_PATH: ${{ inputs.config-path }}

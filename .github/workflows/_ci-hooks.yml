@@ -199,6 +199,75 @@ jobs:
           fi
 
   # -----------------------------------------------------------------------
+  # Plan finalize (plan step) — a plan PR selected WITH feedback carries the
+  # lbm:plan-finalize label. Once the agent pushes its one revision and CI
+  # passes, auto-finalize the merge (merge plan -> flip to implement -> dispatch)
+  # so `/merge-plan <alias> <feedback>` needs no manual finalize step.
+  # -----------------------------------------------------------------------
+  plan-finalize:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate LBM App token
+        id: gen-token
+        uses: actions/create-github-app-token@v1
+        continue-on-error: true
+        with:
+          app-id: ${{ secrets.LBM_APP_ID }}
+          private-key: ${{ secrets.LBM_APP_PRIVATE_KEY }}
+
+      - name: Set LBM token
+        run: |
+          if [ -n "${{ steps.gen-token.outputs.token }}" ]; then
+            echo "LBM_TOKEN=${{ steps.gen-token.outputs.token }}" >> $GITHUB_ENV
+          else
+            echo "LBM_TOKEN=${{ secrets.PAT_TOKEN }}" >> $GITHUB_ENV
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          repository: henryre/lbm-poc
+          path: .lbm
+          token: ${{ env.LBM_TOKEN }}
+
+      - name: Finalize selected plan
+        # Use the LBM token so finalize's re-applied ready label re-fires
+        # issues.labeled and dispatches the implement phase (GITHUB_TOKEN wouldn't).
+        env:
+          GH_TOKEN: ${{ env.LBM_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PAT_TOKEN: ${{ env.LBM_TOKEN }}
+          LBM_CONFIG_PATH: ${{ inputs.config-path }}
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          PR_NUM=$(gh pr list --head "$BRANCH" --json number,labels \
+            --jq '.[0] | select(.labels | map(.name) | index("lbm:plan-finalize")) | .number // empty' 2>/dev/null || echo "")
+          if [ -z "$PR_NUM" ]; then
+            echo "No lbm:plan-finalize PR on branch $BRANCH; nothing to finalize."
+            exit 0
+          fi
+
+          PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null || echo "")
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Implements #\K\d+' | head -n1 || echo "")
+          if [ -z "$ISSUE_NUM" ]; then
+            ISSUE_NUM=$(echo "$BRANCH" | grep -oP 'issue-\K\d+' | head -n1 || echo "")
+          fi
+          AGENT_LABEL=$(python3 .lbm/scripts/agent_ops.py lookup branch-to-name "$BRANCH" label 2>/dev/null || echo "")
+          if [ -z "$ISSUE_NUM" ] || [ -z "$AGENT_LABEL" ]; then
+            echo "Could not resolve issue ($ISSUE_NUM) / agent ($AGENT_LABEL) for PR #$PR_NUM; skipping."
+            exit 0
+          fi
+
+          echo "Auto-finalizing plan PR #$PR_NUM (issue #$ISSUE_NUM, $AGENT_LABEL) after revision."
+          python3 .lbm/scripts/agent_ops.py merge-plan "$ISSUE_NUM" "$AGENT_LABEL"
+
+  # -----------------------------------------------------------------------
   # Deploy (active platforms) — build + deploy on CI success
   # -----------------------------------------------------------------------
   deploy-active:

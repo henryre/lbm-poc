@@ -370,6 +370,10 @@ def update_status_row(
     elif status == "no-changes":
         status_text = "⚠️ No changes"
         pr_text = ""
+    elif status == "blocked":
+        # An environmental/infra failure the repair loop can't fix — needs a human.
+        status_text = "⛔ Needs human"
+        pr_text = None
     elif status == "preview":
         status_text = None
         pr_text = None
@@ -1184,8 +1188,14 @@ def cmd_merge_plan(args: list[str]) -> None:
                            env={**os.environ, "GH_TOKEN": pat_token}, check=False)
         else:
             gh("pr", "comment", pr_num, "--body", rev_body, check=False)
+        # Mark the PR for auto-finalize: once the agent pushes its revision and CI
+        # passes, the CI hook (plan-finalize job) merges it — no manual step. The
+        # label must exist in the repo or --add-label silently no-ops.
+        gh("label", "create", config_parser.PLAN_FINALIZE_LABEL,
+           "--color", "0E8A16", "--description", "LBM: selected plan, auto-finalize after revision", "--force", check=False)
+        gh("pr", "edit", pr_num, "--add-label", config_parser.PLAN_FINALIZE_LABEL, check=False)
         gh("issue", "comment", issue_num, "--body",
-           f"Plan feedback sent to {display} (PR #{pr_num}). Run `/merge-plan {display}` to finalize after the revision.")
+           f"Feedback sent to {display} (PR #{pr_num}). It will **auto-merge** once {display} pushes the revision and CI passes — no further command needed.")
         return
 
     # --- Finalize path ---------------------------------------------------

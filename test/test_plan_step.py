@@ -6,8 +6,33 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import config_parser  # noqa: E402
-from agent_ops import _plan_rev_allowed, build_task_prompt, plan_file_url  # noqa: E402
+from agent_ops import _plan_rev_allowed, build_task_prompt, plan_file_url, update_status_row  # noqa: E402
 from models import PlanConfig  # noqa: E402
+
+
+# --- Fix pack: blocked marker + status + finalize label -------------------
+
+
+def test_get_blocked_comment_marker():
+    assert config_parser.get_blocked_comment_marker({}) == ""
+    cfg = {"checks": {"blocked_comment_marker": "<!-- lbm-blocked -->"}}
+    assert config_parser.get_blocked_comment_marker(cfg) == "<!-- lbm-blocked -->"
+
+
+def test_plan_finalize_label_constant():
+    assert config_parser.PLAN_FINALIZE_LABEL == "lbm:plan-finalize"
+
+
+def test_update_status_row_blocked():
+    body = (
+        "## Agent Implementations\n\n"
+        "| Agent | Status | PR | Preview | Run |\n"
+        "|-------|--------|-----|---------|-----|\n"
+        "| Sly Bear | ⏳ Running... | #19 |  | [Logs](u) |\n"
+    )
+    out = update_status_row(body, "Sly Bear", "blocked", "", "", "")
+    assert "⛔ Needs human" in out
+    assert "#19" in out  # blocked keeps the existing PR reference
 
 
 # --- Task 1: config -------------------------------------------------------
